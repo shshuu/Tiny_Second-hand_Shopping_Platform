@@ -1,6 +1,6 @@
 # Tiny Second-hand Shopping Platform
 
-PostgreSQL 16, Redis 7, Django, Channels로 구성한 중고거래 플랫폼입니다. §28-1~10 구현과 PostgreSQL·Redis 통합 회귀 테스트 73/73을 완료했으며, 현재 기능 동결 상태입니다.
+PostgreSQL 16, Redis 7, Django, Channels로 구성한 중고거래 플랫폼입니다. 독립 검증 후속 보완을 포함한 PostgreSQL·Redis 통합 회귀 테스트 77/77을 완료했으며, 현재 기능 동결 상태입니다.
 
 ## 주요 기능
 
@@ -11,6 +11,7 @@ PostgreSQL 16, Redis 7, Django, Channels로 구성한 중고거래 플랫폼입�
 - 멱등성·한도·원장·REVERSAL 기반 포인트 송금 및 관리자 지급
 - 역할 기반 운영 화면, 재인증, 세션 정책, 불변 감사 로그
 - Host·CSRF·HTTPS/HSTS·CSP·쿠키·운영 미디어 분리 보안 설정
+- Redis fail-closed 회원가입 및 일반 로그인 실패 속도 제한
 
 ## 기술 스택
 
@@ -67,6 +68,8 @@ docker compose exec -T web python manage.py check
 
 웹 주소: <http://localhost:8000/>
 
+8000 포트를 다른 프로그램이 사용 중이면 `.env`의 `WEB_PORT=18000`처럼 변경한 뒤 `http://localhost:18000/`으로 접속합니다. Compose project name 변경만으로는 호스트 포트 충돌이 해결되지 않습니다.
+
 Compose의 웹 컨테이너는 시작 시에도 마이그레이션을 적용합니다. 위 `migrate` 명령은 제출·검증 시 명시적으로 상태를 확인하기 위한 명령입니다.
 
 ## 마이그레이션 및 검사
@@ -86,7 +89,7 @@ docker compose exec -T web python manage.py migrate --check
 docker compose exec -T web python manage.py test tests --noinput
 ```
 
-기대 결과는 `Ran 73 tests ... OK`입니다. Redis fail-closed 테스트 중 의도적으로 Redis backend 오류 로그가 출력될 수 있습니다. 이는 장애 시 요청을 안전하게 거부하는지 확인하는 테스트이며, 실제 HTTP 응답에는 예외나 스택 트레이스가 노출되지 않습니다.
+기대 결과는 `Ran 77 tests ... OK`입니다. Redis fail-closed 테스트 중 의도적으로 Redis backend 오류 로그가 출력될 수 있습니다. 이는 장애 시 요청을 안전하게 거부하는지 확인하는 테스트이며, 실제 HTTP 응답에는 예외나 스택 트레이스가 노출되지 않습니다.
 
 ## 관리자 계정 준비
 
@@ -140,6 +143,7 @@ docker compose down -v
 - [최종 구현 기준 설계 변경사항](docs/as-built-design-deviations.md)
 - [독립 검증 안내서](docs/independent-verification-guide.md)
 - [§28-10 보안 강화 문서](docs/28_security_hardening.md)
+- [인증 rate-limit 후속 검증](docs/followup-auth-rate-limit-verification.md)
 - [운영 모니터링 runbook](docs/operations_monitoring.md)
 
 ## 운영 배포 전 별도 확인

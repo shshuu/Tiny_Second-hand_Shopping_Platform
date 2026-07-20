@@ -3,6 +3,7 @@
 ## Mandatory application controls
 
 - Administrator login uses a Redis-backed, fail-closed fixed-window counter keyed by a SHA-256 account-and-IP digest. The key and SecurityEvent detail never contain a password, session identifier, or Redis key. Intentional Redis-outage tests may write an application traceback to test logs; the HTTP response is a generalized 403 and never exposes that traceback.
+- Public signup POST uses a fail-closed SHA-256 IP Redis fixed-window counter before user creation. Public login has separate SHA-256 account+IP and IP-only failed-attempt counters; successful login clears the relevant counters. Public auth backend failures return a generalized 429 without raw username, IP, password, session ID, or Redis key disclosure.
 - Production requires `DEBUG=false`, a non-development secret, a non-development PostgreSQL password, non-local `ALLOWED_HOSTS`, `DATABASE_URL`, `REDIS_URL`, and `DJANGO_TRUSTED_PROXY=true`.
 - Production cookies are Secure, HttpOnly (session and CSRF), and SameSite=Lax. HTTPS redirects, HSTS, proxy HTTPS recognition, CSP, frame denial, MIME-sniffing protection, and a restrictive referrer policy are enabled.
 - Django serves media only in DEBUG mode. Production media must be served by a non-executable object store or reverse proxy with an explicit content-type policy.

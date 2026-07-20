@@ -21,7 +21,7 @@ services:
   web:
     build: .
     env_file: .env
-    ports: ["8000:8000"]
+    ports: ["${WEB_PORT:-8000}:8000"]
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}

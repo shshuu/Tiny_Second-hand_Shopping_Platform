@@ -90,6 +90,7 @@ High-risk actions use public IDs, POST, CSRF, reason, object permission, and whe
 - HTTPS redirect, HSTS (31,536,000 seconds, includeSubDomains, preload), Secure/HttpOnly/SameSite cookies, nosniff, frame denial, referrer policy, permissions policy, and CSP are set.
 - CSP permits only same-origin connections, including the application WebSocket origin; it excludes `unsafe-eval` and broad source wildcards.
 - Django serves media URLs only in DEBUG mode. Production media is separate from static files and must be non-executable with `nosniff`.
+- Public signup is limited by an IP SHA-256 Redis fixed-window counter before user creation. Public login uses account+IP and IP-only SHA-256 failure counters, clears them after successful login, and fails closed if Redis is unavailable.
 
 ## Image upload policy
 
@@ -111,7 +112,7 @@ See [`.env.example`](../.env.example) for the complete development template. Set
 
 ## Tests and intentional fail-closed log
 
-Final PostgreSQL/Redis result: **73/73 passed**, including 6 §28-10 security tests; the previous 67 tests had no regression. No failures, errors, skipped, or excluded tests remained. Test database connections were 0 and `admin-login:*` Redis test keys were absent after completion.
+Final PostgreSQL/Redis result after independent-verification follow-up: **77/77 passed**, including the four public signup/login limiter tests. The previously verified 73 tests had no regression. No failures, errors, skipped, or excluded tests remained. Test database connections were 0 and test Redis keys were cleaned after completion.
 
 Redis fail-closed tests intentionally inject backend errors and can emit an application error/stack log. This proves requests are rejected safely. The actual HTTP response remains generalized and does not expose internal exceptions, passwords, session identifiers, or Redis keys.
 

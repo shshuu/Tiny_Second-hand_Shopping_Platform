@@ -79,11 +79,12 @@ Distinct valid reporter accumulation can apply temporary `HIDDEN` to a product o
 - Production startup validates `ALLOWED_HOSTS`, HTTPS-only CSRF trusted origins, non-development secrets and DB credentials, URLs, and trusted-proxy policy.
 - HTTPS redirect, HSTS, Secure/HttpOnly/SameSite cookies, CSP, `nosniff`, Referrer-Policy, Permissions-Policy, and frame protection are enabled by settings/middleware.
 - Redis errors on sensitive rate-limited functionality use fail-closed behavior; the client receives a generalized response.
+- After independent verification identified missing public authentication limits, signup POST now uses a SHA-256 IP Redis counter before user creation; public-login failures use SHA-256 account+IP and IP-only counters, with success reset and fail-closed backend behavior.
 - Actual HSTS preload registration and real TLS certificates are deployment tasks, not actions completed solely by application settings.
 
 ## 11. Tests and migrations
 
-The final PostgreSQL/Redis test result was **73/73 passed**. There were no failures, errors, skips, or exclusions. Migrations are `0001_initial` through `0005_report_assignment`.
+The initial final PostgreSQL/Redis result was 73/73. Independent verification then identified two High public-authentication rate-limit gaps. The corrective follow-up added four tests and the final result is **77/77 passed**, with no failures, errors, skips, or exclusions. Migrations remain `0001_initial` through `0005_report_assignment`.
 
 After the submission-document cleanup, functional source code, Compose, settings, migrations, and tests were not changed; the full suite was therefore not rerun solely for documentation changes.
 

@@ -33,7 +33,7 @@ For a clean local database, run `docker compose down -v` before starting.
 docker compose exec -T web python manage.py test tests --noinput
 ```
 
-Expected result: `Ran 73 tests ... OK` on PostgreSQL and Redis. Afterward, confirm the test DB is removed and no `admin-login:*` key remains in Redis.
+Expected result: `Ran 77 tests ... OK` on PostgreSQL and Redis. Afterward, confirm the test DB is removed and no `admin-login:*` or `public-rate:*` test key remains in Redis. See the preserved [authentication rate-limit follow-up](followup-auth-rate-limit-verification.md) for the two High findings and their corrective verification.
 
 ## Main URLs
 

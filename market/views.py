@@ -1,19 +1,44 @@
+import hashlib
+import logging
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import OperationalError
 from django.db.models import Q
 from django.core.paginator import Paginator
-import logging
 from django.http import Http404, HttpResponseForbidden
+from redis.exceptions import RedisError
 from django.shortcuts import get_object_or_404, redirect, render
 from .forms import ChatMessageForm, ProductForm, ProductImageForm, ProfileForm, ReportForm, SafePasswordChangeForm, SignUpForm, TransferForm
-from .models import Block, ChatRoom, Product, ProductImage, Report, User, WalletTransaction
+from .models import Block, ChatRoom, Product, ProductImage, Report, SecurityEvent, User, WalletTransaction
 from .services import change_product_status, create_report, direct_room, register_user, send_message, transfer
 
 logger = logging.getLogger(__name__)
+
+RATE_LIMIT_ERROR = "Request cannot be processed. Please try again later."
+
+def _client_ip(request): return request.META.get("REMOTE_ADDR", "unknown")[:64]
+def _rate_key(scope, value): return f"public-rate:{scope}:{hashlib.sha256(value.encode()).hexdigest()}"
+def _rate_backend_event(event_type, key):
+    SecurityEvent.objects.create(event_type=event_type, detail=f"rate_key_digest={hashlib.sha256(key.encode()).hexdigest()[:16]}")
+def _counter_limited(key, limit):
+    try: return (cache.get(key) or 0) >= limit
+    except (RedisError, ConnectionError, OSError):
+        _rate_backend_event("PUBLIC_RATE_LIMIT_BACKEND_ERROR", key); return True
+def _increment_counter(key, limit, window, event_type):
+    try:
+        if cache.add(key, 1, timeout=window): return False
+        return cache.incr(key) > limit
+    except (RedisError, ConnectionError, OSError):
+        _rate_backend_event(event_type, key); return True
+def _login_rate_keys(request):
+    username=request.POST.get("username", "")[:150].casefold()
+    ip=_client_ip(request)
+    return _rate_key("login-account-ip", f"{username}\0{ip}"), _rate_key("login-ip", ip)
 
 def product_list(request):
     q=request.GET.get("q", "").strip()[:100]
@@ -35,6 +60,11 @@ def product_list(request):
 
 def signup(request):
     form=SignUpForm(request.POST or None)
+    if request.method == "POST":
+        key=_rate_key("signup-ip", _client_ip(request))
+        if _increment_counter(key, settings.SIGNUP_RATE_LIMIT, settings.SIGNUP_RATE_LIMIT_WINDOW_SECONDS, "SIGNUP_RATE_LIMIT_BACKEND_ERROR"):
+            form.add_error(None, RATE_LIMIT_ERROR)
+            return render(request, "market/form.html", {"form":form, "title":"Sign up"}, status=429)
     if request.method == "POST" and form.is_valid():
         user=register_user(username=form.cleaned_data["username"],password=form.cleaned_data["password1"],display_name=form.cleaned_data["display_name"])
         login(request,user)
@@ -43,6 +73,33 @@ def signup(request):
 
 class SafeLoginView(LoginView):
     template_name="market/form.html"
+
+    def _error_response(self, status=200):
+        form=self.get_form_class()(request=self.request)
+        form.full_clean()
+        form.cleaned_data={}
+        form.add_error(None, RATE_LIMIT_ERROR)
+        return self.render_to_response(self.get_context_data(form=form), status=status)
+
+    def post(self, request, *args, **kwargs):
+        account_key, ip_key=_login_rate_keys(request)
+        if _counter_limited(account_key, settings.LOGIN_FAILURE_RATE_LIMIT) or _counter_limited(ip_key, settings.LOGIN_FAILURE_IP_RATE_LIMIT):
+            return self._error_response(status=429)
+        return super().post(request, *args, **kwargs)
+
+    def form_invalid(self, form):
+        account_key, ip_key=_login_rate_keys(self.request)
+        blocked=_increment_counter(account_key, settings.LOGIN_FAILURE_RATE_LIMIT, settings.LOGIN_FAILURE_RATE_LIMIT_WINDOW_SECONDS, "LOGIN_RATE_LIMIT_BACKEND_ERROR")
+        blocked=_increment_counter(ip_key, settings.LOGIN_FAILURE_IP_RATE_LIMIT, settings.LOGIN_FAILURE_RATE_LIMIT_WINDOW_SECONDS, "LOGIN_RATE_LIMIT_BACKEND_ERROR") or blocked
+        return self._error_response(status=429 if blocked else 200)
+
+    def form_valid(self, form):
+        account_key, ip_key=_login_rate_keys(self.request)
+        try: cache.delete_many([account_key, ip_key])
+        except (RedisError, ConnectionError, OSError):
+            _rate_backend_event("LOGIN_RATE_LIMIT_BACKEND_ERROR", account_key)
+            return self._error_response(status=429)
+        return super().form_valid(form)
     extra_context={"title":"로그인"}
 
 @login_required
