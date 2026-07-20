@@ -21,7 +21,7 @@
 - Use a production database/Redis with network ACLs, TLS where available, backups, rotation, and non-default credentials.
 - Configure the proxy to restrict media uploads to static bytes, set `X-Content-Type-Options: nosniff`, and prevent script execution from the media origin.
 - The web container must be reachable only from the trusted proxy network. The proxy must remove any client-supplied `X-Forwarded-Proto` and set its own `https` value before forwarding. Do not publish the Django application port, PostgreSQL, or Redis ports directly in production.
-- The checked-in Compose `8000:8000` mapping is a development-only convenience. Production deployment must omit that mapping and expose only the TLS proxy.
+- The checked-in Compose mapping is `${WEB_PORT:-8000}:8000`: host port 8000 is the development default and `.env` `WEB_PORT` can select another free host port. Changing only a Compose project name does not resolve a host-port collision. Production deployment must omit direct application-port exposure and expose only the TLS proxy.
 
 Example reverse-proxy media policy (the application does not serve this route in production):
 

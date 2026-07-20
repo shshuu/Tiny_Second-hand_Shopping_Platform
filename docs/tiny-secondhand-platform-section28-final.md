@@ -33,7 +33,7 @@ Text equivalent: the browser reaches Django/Daphne through a TLS proxy in produc
 
 ## Docker services and network boundary
 
-`docker-compose.yml` defines `web`, `db`, and `redis`. PostgreSQL and Redis have healthchecks; `web` waits for both to be healthy. The checked-in `8000:8000` mapping is development-only. Production must expose only the TLS proxy; web, PostgreSQL, and Redis must stay on private networks.
+`docker-compose.yml` defines `web`, `db`, and `redis`. PostgreSQL and Redis have healthchecks; `web` waits for both to be healthy. The development mapping is `${WEB_PORT:-8000}:8000`: host port 8000 by default and configurable through `.env` `WEB_PORT`. Changing a Compose project name does not resolve a host-port collision. Production must expose only the TLS proxy; web, PostgreSQL, and Redis must stay on private networks.
 
 ## Core models and data flow
 
