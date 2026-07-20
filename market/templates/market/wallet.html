@@ -1,0 +1,4 @@
+{% extends 'market/base.html' %}{% block content %}
+<h1>내 지갑</h1><p><strong>{{ wallet.balance }} P</strong></p><form method="post">{% csrf_token %}{{ form.as_p }}<button>송금</button></form>
+<h2>거래 내역</h2>{% for tx in transactions %}<p>{{ tx.created_at }} · {{ tx.transaction_type }} · {% if tx.destination_id == wallet.id %}입금{% else %}출금{% endif %} {{ tx.amount }} P · {% if tx.destination_id == wallet.id %}{{ tx.source.user.display_name|default:'시스템' }}{% else %}{{ tx.destination.user.display_name|default:'시스템' }}{% endif %} · {{ tx.memo }}</p>{% empty %}<p>거래 내역이 없습니다.</p>{% endfor %}
+{% endblock %}

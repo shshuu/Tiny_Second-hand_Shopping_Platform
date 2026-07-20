@@ -1,0 +1,1 @@
+{% extends 'market/base.html' %}{% block content %}<h1>채팅</h1>{% for message in messages %}<p><strong>{{ message.sender.display_name }}</strong>: {{ message.content }}</p>{% empty %}<p>메시지가 없습니다.</p>{% endfor %}<form method="post">{% csrf_token %}{{ form.as_p }}<button>전송</button></form>{% endblock %}

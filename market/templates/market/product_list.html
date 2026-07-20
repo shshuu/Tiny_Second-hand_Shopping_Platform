@@ -1,0 +1,11 @@
+{% extends 'market/base.html' %}
+{% block content %}
+<h1>중고 상품</h1>
+<form method="get"><input name="q" value="{{ q }}" placeholder="상품명 또는 판매자 검색"><button>검색</button></form>
+{% for p in products %}
+<article class="card"><a href="{% url 'product_detail' p.public_id %}"><h2>{{ p.title }}</h2></a><p>{{ p.price }} P · {{ p.seller.display_name }} · {{ p.category }}</p></article>
+{% empty %}<p>표시할 상품이 없습니다.</p>{% endfor %}
+{% if page_obj.has_previous %}<a href="?{{ query_params }}{% if query_params %}&amp;{% endif %}page={{ page_obj.previous_page_number }}">이전</a>{% endif %}
+<span>{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+{% if page_obj.has_next %}<a href="?{{ query_params }}{% if query_params %}&amp;{% endif %}page={{ page_obj.next_page_number }}">다음</a>{% endif %}
+{% endblock %}

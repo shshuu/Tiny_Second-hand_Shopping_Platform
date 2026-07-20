@@ -1,0 +1,1 @@
+{% extends 'market/base.html' %}{% block content %}<h1>Reported direct chat</h1><p>Report {{ report.public_id }} · message {{ message.public_id }}</p>{% for item in messages %}<article class="card"><strong>{{ item.sender.display_name }}</strong><p>{{ item.content }}</p><small>{{ item.created_at }}</small></article>{% endfor %}{% endblock %}

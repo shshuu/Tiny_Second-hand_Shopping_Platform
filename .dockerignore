@@ -1,0 +1,34 @@
+# Secrets and VCS metadata
+.env
+.env.*
+.git
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Runtime data and generated assets
+media/
+staticfiles/
+*.sqlite3
+db.sqlite3
+
+# Python, test, coverage, and temporary artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+test-results/
+test-reports/
+.tmp/
+tmp/
+
+# Local tooling and non-runtime material
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+docs/

@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tiny_market
+      POSTGRES_USER: tiny
+      POSTGRES_PASSWORD: tiny
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tiny -d tiny_market"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  web:
+    build: .
+    env_file: .env
+    ports: ["8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    volumes: ["./media:/app/media"]
+volumes:
+  postgres_data:

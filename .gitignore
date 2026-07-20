@@ -1,0 +1,48 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local databases, uploads, and logs
+*.sqlite3
+db.sqlite3
+media/
+*.log
+logs/
+
+# Python and test artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+test-results/
+test-reports/
+
+# Virtual environments and temporary files
+.venv/
+venv/
+env/
+.tmp/
+tmp/
+*.tmp
+*.swp
+*~
+
+# IDE and OS files
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Generated static assets
+staticfiles/

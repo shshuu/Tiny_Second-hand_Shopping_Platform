@@ -1,0 +1,15 @@
+from django.contrib.auth.views import LogoutView
+from django.urls import path
+from . import admin_views
+from .views import SafeLoginView, chat_room, password_change, product_create, product_delete, product_detail, product_edit, product_list, product_status, profile_view, signup, start_direct_chat, submit_report, toggle_block, wallet_view
+
+urlpatterns=[
+    path("operations/login/",admin_views.admin_login,name="admin_login"), path("operations/logout/",admin_views.admin_logout,name="admin_logout"),
+    path("operations/",admin_views.dashboard,name="ops_dashboard"), path("operations/users/",admin_views.users,name="ops_users"), path("operations/users/create/",admin_views.create_user,name="ops_create_user"), path("operations/users/<uuid:public_id>/action/",admin_views.user_action,name="ops_user_action"),
+    path("operations/products/",admin_views.products,name="ops_products"), path("operations/products/<uuid:public_id>/action/",admin_views.product_action,name="ops_product_action"), path("operations/reports/",admin_views.reports,name="ops_reports"), path("operations/reports/<uuid:public_id>/action/",admin_views.report_action,name="ops_report_action"), path("operations/reports/<uuid:public_id>/assign/",admin_views.assign_report_view,name="ops_report_assign"), path("operations/reports/<uuid:report_id>/direct-chat/",admin_views.reported_direct_chat,name="ops_reported_chat"), path("operations/messages/<uuid:public_id>/hide/",admin_views.hide_message,name="ops_message_hide"), path("operations/transactions/",admin_views.transactions,name="ops_transactions"), path("operations/transactions/<uuid:public_id>/",admin_views.transaction_detail,name="ops_transaction_detail"), path("operations/transactions/grant/",admin_views.grant_points,name="ops_grant"), path("operations/transactions/<uuid:public_id>/reverse/",admin_views.reverse_transaction,name="ops_reverse"), path("operations/audit/",admin_views.audit_logs,name="ops_audit"),
+    path("", product_list, name="product_list"), path("signup/", signup, name="signup"), path("login/", SafeLoginView.as_view(), name="login"), path("logout/", LogoutView.as_view(), name="logout"),
+    path("products/new/", product_create, name="product_create"), path("products/<uuid:public_id>/", product_detail, name="product_detail"), path("products/<uuid:public_id>/edit/", product_edit, name="product_edit"), path("products/<uuid:public_id>/delete/", product_delete, name="product_delete"), path("products/<uuid:public_id>/status/",product_status,name="product_status"),
+    path("profile/", profile_view, name="profile"), path("password/", password_change, name="password_change"), path("blocks/<str:username>/", toggle_block, name="toggle_block"), path("wallet/", wallet_view, name="wallet"),
+    path("chat/<uuid:public_id>/", chat_room, name="chat_room"), path("chat/start/<str:username>/", start_direct_chat, name="start_direct_chat"), path("chat/start/<str:username>/<uuid:product_id>/", start_direct_chat, name="start_product_chat"),
+    path("reports/<str:target_type>/<uuid:target_id>/", submit_report, name="submit_report"),
+]
