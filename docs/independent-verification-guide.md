@@ -4,6 +4,8 @@
 
 Verify this repository from a clean environment without relying on prior conversations. Compare requirements, code, migrations, settings, and runtime behavior directly. Do not modify implementation code before reporting a discrepancy.
 
+Read [the as-built design deviations record](as-built-design-deviations.md) alongside the original system design. It explains final structural and deployment-scope differences without replacing the original design baseline.
+
 ## System and preparation
 
 The Compose runtime consists of Django/Daphne (`web`), PostgreSQL 16 (`db`), and Redis 7 (`redis`). PostgreSQL stores application and ledger data; Redis provides rate-limit counters and the Channels layer.

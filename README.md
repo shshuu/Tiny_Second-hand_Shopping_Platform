@@ -137,6 +137,7 @@ docker compose down -v
 ## 문서
 
 - [§28 최종 산출물](docs/tiny-secondhand-platform-section28-final.md)
+- [최종 구현 기준 설계 변경사항](docs/as-built-design-deviations.md)
 - [독립 검증 안내서](docs/independent-verification-guide.md)
 - [§28-10 보안 강화 문서](docs/28_security_hardening.md)
 - [운영 모니터링 runbook](docs/operations_monitoring.md)
