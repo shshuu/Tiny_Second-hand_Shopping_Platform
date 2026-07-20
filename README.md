@@ -63,14 +63,14 @@ Copy-Item .env.example .env
 ```bash
 docker compose up -d --build
 docker compose ps
-docker compose logs web
+docker compose logs -f web
 ```
 
 웹 주소: <http://localhost:8000/>
 
 8000 포트를 다른 프로그램이 사용 중이면 `.env`의 `WEB_PORT=18000`처럼 변경한 뒤 `http://localhost:18000/`으로 접속합니다. Compose project name 변경만으로는 호스트 포트 충돌이 해결되지 않습니다.
 
-The web container applies committed migrations automatically at startup. On a fresh database, do not run a separate `manage.py migrate` concurrently with `docker compose up`. Wait for `docker compose ps` or `docker compose logs web` to confirm the automatic migration and server startup, then run the checks below. In production, use one dedicated migration job rather than allowing multiple web replicas to migrate concurrently.
+The web container applies committed migrations automatically at startup. `docker compose ps` confirms container startup only; it does not prove that migrations are complete. Follow `docker compose logs -f web` and wait for committed migrations to finish without an error and for Daphne to print `Listening on TCP address`. Press `Ctrl+C` only to stop log follow; the containers keep running. On a fresh database, do not run a separate `manage.py migrate` concurrently with `docker compose up`. In production, use one dedicated migration job rather than allowing multiple web replicas to migrate concurrently.
 
 ## 마이그레이션 및 검사
 
@@ -117,6 +117,8 @@ user.save(update_fields=["role"])
    ```text
    ws://localhost:8000/ws/chat/<chat-room-public-id>/
    ```
+
+   This is the default `WEB_PORT=8000` example. HTTP and WebSocket use the same host port: with `.env` `WEB_PORT=18000`, use `http://localhost:18000/` and `ws://localhost:18000/ws/chat/<chat-room-public-id>/`.
 
 3. `{"content":"hello"}` 형식으로 전송하면 같은 방의 다른 연결에 전달되고 DB에 저장됩니다.
 
