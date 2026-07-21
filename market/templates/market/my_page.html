@@ -1,0 +1,9 @@
+{% extends 'market/base.html' %}
+{% block content %}
+<h1>마이페이지</h1>
+<p><strong>{{ user.display_name }}</strong> · {{ user.username }}</p><p>{{ user.profile.bio|default:'소개글이 없습니다.' }}</p>
+<div class="actions"><a class="button secondary" href="{% url 'profile' %}">프로필 수정</a><a class="button secondary" href="{% url 'password_change' %}">비밀번호 변경</a><a class="button secondary" href="{% url 'my_store' %}">내 상품 {{ product_count }}개 (판매 완료 {{ sold_count }}개)</a><a class="button secondary" href="{% url 'wallet' %}">포인트 {{ user.wallet.balance }} P</a><a class="button secondary" href="{% url 'chat_list' %}">채팅방</a></div>
+<h2>알림 (읽지 않음 {{ notification_count }}건)</h2>{% for notification in recent_notifications %}<p>{{ notification.created_at }} · {{ notification.title }} · {{ notification.content }}</p>{% empty %}<p>알림이 없습니다.</p>{% endfor %}
+<h2>내 신고</h2>{% for report in recent_reports %}<p>{{ report.created_at }} · {{ report.target_type }} · {{ report.status }}</p>{% empty %}<p>신고 이력이 없습니다.</p>{% endfor %}
+<h2>차단한 사용자</h2>{% for block in blocked_users %}<p>{{ block.blocked.display_name }} ({{ block.blocked.username }})</p>{% empty %}<p>차단한 사용자가 없습니다.</p>{% endfor %}
+{% endblock %}

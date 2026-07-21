@@ -23,7 +23,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def allowed(self):
         room=ChatRoom.objects.filter(public_id=self.room_id).first()
-        return bool(room and self.scope["user"].can_transfer() and (room.room_type == ChatRoom.Type.GLOBAL or room.participants.filter(user=self.scope["user"]).exists()))
+        return bool(room and room.room_type == ChatRoom.Type.DIRECT and self.scope["user"].can_transfer() and room.participants.filter(user=self.scope["user"]).exists())
     @database_sync_to_async
     def persist(self,content):
         room=ChatRoom.objects.get(public_id=self.room_id)

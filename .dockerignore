@@ -12,6 +12,7 @@ media/
 staticfiles/
 *.sqlite3
 db.sqlite3
+media/
 
 # Python, test, coverage, and temporary artifacts
 __pycache__/

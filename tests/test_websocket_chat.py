@@ -8,15 +8,17 @@ from django.test import TransactionTestCase
 from django.test import override_settings
 from config.asgi import application
 from market.consumers import ChatConsumer
-from market.models import Block, ChatMessage, User
-from market.services import direct_room, global_room, register_user
+from market.models import Block, Category, ChatMessage, Product, User
+from market.services import direct_room, register_user
 
 class WebSocketChatTests(TransactionTestCase):
     def setUp(self):
         self.a=register_user(username="wsa",password="very-secure-password",display_name="A")
         self.b=register_user(username="wsb",password="very-secure-password",display_name="B")
         self.c=register_user(username="wsc",password="very-secure-password",display_name="C")
-        self.room=direct_room(sender=self.a,recipient=self.b)
+        self.category=Category.objects.create(name="Websocket",slug="websocket")
+        self.product=Product.objects.create(seller=self.b,category=self.category,title="Websocket product",description="x",price=10,condition="USED",status=Product.Status.ACTIVE)
+        self.room=direct_room(sender=self.a,recipient=self.b,product=self.product)
     def _communicator(self,user, room=None):
         """Exercise ProtocolTypeRouter + AuthMiddlewareStack, not a mocked user."""
         client=Client(); client.force_login(user)
@@ -38,18 +40,6 @@ class WebSocketChatTests(TransactionTestCase):
             self.assertFalse((await anonymous.connect())[0])
             self.assertFalse((await other.connect())[0])
         async_to_sync(run)()
-    def test_global_room_broadcasts_through_redis_channel_layer(self):
-        room=global_room()
-        first=self._communicator(self.a, room)
-        second=self._communicator(self.b, room)
-        async def run():
-            self.assertTrue((await first.connect())[0]); self.assertTrue((await second.connect())[0])
-            await first.send_to(text_data=json.dumps({"content":"global"}))
-            self.assertEqual((await second.receive_json_from())["content"],"global")
-            await first.disconnect(); await second.disconnect()
-        async_to_sync(run)()
-        self.assertTrue(ChatMessage.objects.filter(room=room, sender=self.a, content="global").exists())
-
     def test_direct_block_and_restricted_messages_are_rejected_without_persisting(self):
         first=self._communicator(self.a); second=self._communicator(self.b)
         Block.objects.create(blocker=self.b, blocked=self.a)
@@ -69,7 +59,7 @@ class WebSocketChatTests(TransactionTestCase):
 
     @override_settings(CHAT_RATE_LIMIT_PER_MINUTE=1, RATE_LIMIT_TTL_SECONDS=1)
     def test_redis_rate_limit_is_per_user_and_allows_after_ttl(self):
-        room=global_room(); first=self._communicator(self.a, room); second=self._communicator(self.b, room)
+        room=self.room; first=self._communicator(self.a, room); second=self._communicator(self.b, room)
         async def run():
             self.assertTrue((await first.connect())[0]); self.assertTrue((await second.connect())[0])
             await first.send_to(text_data=json.dumps({"content":"one"})); await first.receive_json_from(); await second.receive_json_from()

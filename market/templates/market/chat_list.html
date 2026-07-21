@@ -1,0 +1,4 @@
+{% extends 'market/base.html' %}
+{% block content %}<h1>채팅</h1>
+{% for room in rooms %}<article class="card product-card">{% if room.related_product %}{% with image=room.related_product.images.all|first %}{% if image %}<img class="thumb" src="{{ image.image.url }}" alt="{{ room.related_product.title }}">{% else %}<div class="placeholder">이미지 없음</div>{% endif %}{% endwith %}{% endif %}<div><a href="{% url 'chat_room' room.public_id %}"><h2>{% if room.related_product %}{{ room.related_product.title }}{% else %}상품 정보 없음{% endif %}</h2></a><p>{{ room.viewer_role }} · {{ room.counterparty.display_name }} · {% if room.related_product %}{{ room.related_product.status }}{% endif %}</p><p class="muted">{{ room.last_message_text|default:'아직 메시지가 없습니다.' }} {% if room.last_message_at %}· {{ room.last_message_at }}{% endif %}</p></div></article>{% empty %}<p>진행 중인 상품 채팅이 없습니다. 상품 상세에서 판매자에게 채팅을 시작하세요.</p>{% endfor %}
+{% endblock %}

@@ -135,14 +135,14 @@ def verify_wallet(wallet):
 @transaction.atomic
 def direct_room(*,sender,recipient,product=None):
     if sender == recipient or _blocked(sender,recipient) or not sender.can_transfer() or not recipient.can_transfer(): raise ValidationError("채팅을 시작할 수 없습니다.")
+    # Public room creation always supplies a product.  Keeping product-less
+    # direct rooms readable preserves historic moderator evidence, but no
+    # public URL can create one.
+    if product is not None and (product.seller_id != recipient.pk or product.status != Product.Status.ACTIVE):
+        raise ValidationError("현재 이 상품으로 새 채팅을 시작할 수 없습니다.")
     for room in ChatRoom.objects.filter(room_type=ChatRoom.Type.DIRECT,related_product=product).prefetch_related("participants"):
         if {p.user_id for p in room.participants.all()} == {sender.pk,recipient.pk}: return room
     room=ChatRoom.objects.create(room_type=ChatRoom.Type.DIRECT,related_product=product); ChatParticipant.objects.bulk_create([ChatParticipant(room=room,user=sender),ChatParticipant(room=room,user=recipient)]); return room
-
-@transaction.atomic
-def global_room():
-    room=ChatRoom.objects.filter(room_type=ChatRoom.Type.GLOBAL).first()
-    return room or ChatRoom.objects.create(room_type=ChatRoom.Type.GLOBAL)
 
 @transaction.atomic
 def change_product_status(*, seller, product, status):
@@ -151,10 +151,9 @@ def change_product_status(*, seller, product, status):
     if product.seller_id != seller.pk or status not in allowed.get(product.status,set()): raise ValidationError("허용되지 않은 판매 상태 전이입니다.")
     product.status=status; product.save(update_fields=["status","updated_at"]); AuditLog.objects.create(actor=seller,action="product.status",target=str(product.public_id),reason=status); return product
 def send_message(*,sender,room,content):
-    if not sender.can_transfer() or (room.room_type == ChatRoom.Type.DIRECT and not room.participants.filter(user=sender).exists()): raise ValidationError("채팅 권한이 없습니다.")
-    if room.room_type == ChatRoom.Type.DIRECT:
-        other=room.participants.exclude(user=sender).select_related("user").first()
-        if not other or _blocked(sender,other.user): raise ValidationError("차단 관계에서는 메시지를 전송할 수 없습니다.")
+    if room.room_type != ChatRoom.Type.DIRECT or not sender.can_transfer() or not room.participants.filter(user=sender).exists(): raise ValidationError("채팅 권한이 없습니다.")
+    other=room.participants.exclude(user=sender).select_related("user").first()
+    if not other or _blocked(sender,other.user): raise ValidationError("차단 관계에서는 메시지를 전송할 수 없습니다.")
     content=content.strip()
     if not content or len(content)>1000: raise ValidationError("메시지 길이가 올바르지 않습니다.")
     _rate_limit(sender,"chat",settings.CHAT_RATE_LIMIT_PER_MINUTE)

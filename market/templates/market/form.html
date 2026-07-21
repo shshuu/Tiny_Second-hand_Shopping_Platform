@@ -1,1 +1,17 @@
-{% extends 'market/base.html' %}{% block content %}<h1>{{ title }}</h1><form method="post"{% if multipart %} enctype="multipart/form-data"{% endif %}>{% csrf_token %}{{ form.as_p }}{% if image_form %}{{ image_form.as_p }}{% endif %}<button type="submit">저장</button></form>{% endblock %}
+{% extends 'market/base.html' %}
+{% block content %}
+<h1>{{ title }}</h1>
+{% if category_available is False %}<p class="notice">등록 가능한 카테고리가 없습니다. 관리자에게 카테고리 준비를 요청해 주세요.</p>{% endif %}
+<form method="post"{% if multipart %} enctype="multipart/form-data"{% endif %}>{% csrf_token %}
+  {{ form.as_p }}
+  {% if image_form %}
+    <p><strong>상품 이미지는 최대 5장</strong>까지 선택할 수 있습니다.</p>
+    {{ image_form.as_p }}<p id="image-count" class="muted" aria-live="polite"></p>
+  {% endif %}
+  <button type="submit">저장</button>
+</form>
+{% if image_form %}<script>
+const imageInput=document.querySelector('input[type=file][name=images]'); const imageCount=document.getElementById('image-count');
+if(imageInput){ imageInput.addEventListener('change',()=>{const count=imageInput.files.length; if(count>5){imageInput.value='';imageCount.textContent='이미지는 최대 5장만 선택할 수 있습니다. 선택을 다시 해주세요.';}else{imageCount.textContent=`선택한 이미지: ${count}장 / 최대 5장`;}}); }
+</script>{% endif %}
+{% endblock %}

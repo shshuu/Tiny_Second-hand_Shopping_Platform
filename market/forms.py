@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from io import BytesIO
 from django.core.files.uploadedfile import SimpleUploadedFile
 from PIL import Image, ImageOps
-from .models import Product, User
+from .models import Category, Product, User
 
 class SignUpForm(UserCreationForm):
     class Meta:
@@ -18,6 +18,9 @@ class SignUpForm(UserCreationForm):
 
 class ProductForm(forms.ModelForm):
     class Meta: model=Product; fields=("category","title","description","price","condition")
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["category"].queryset = Category.objects.filter(is_active=True).order_by("name")
 
 class MultipleFileInput(forms.ClearableFileInput):
     allow_multiple_selected=True

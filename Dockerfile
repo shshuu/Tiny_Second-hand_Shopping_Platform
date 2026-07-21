@@ -4,7 +4,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-RUN useradd -m appuser && chown -R appuser /app
-USER appuser
+RUN useradd -m appuser \
+    && mkdir -p /app/media /app/staticfiles \
+    && chown -R appuser:appuser /app \
+    && chmod 755 /app/docker-entrypoint.sh
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && daphne -b 0.0.0.0 -p 8000 config.asgi:application"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

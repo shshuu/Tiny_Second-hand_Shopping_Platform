@@ -1,159 +1,126 @@
 # Tiny Second-hand Shopping Platform
 
-PostgreSQL 16, Redis 7, Django, Channels로 구성한 중고거래 플랫폼입니다. 독립 검증 후속 보완을 포함한 PostgreSQL·Redis 통합 회귀 테스트 77/77을 완료했으며, 현재 기능 동결 상태입니다.
+Docker Compose로 실행하는 중고거래 시연 프로젝트입니다. Django/Daphne, PostgreSQL 16, Redis 7과 상품 기반 1:1 WebSocket 채팅을 사용합니다.
 
 ## 주요 기능
 
-- 원자적 회원가입: 사용자·프로필·0P 지갑·선택적 환영 포인트 거래/원장 생성
-- 상품 등록·검색·상태 전이·안전한 이미지 재인코딩 업로드
-- 전체/1:1 채팅, Redis Channel Layer 기반 WebSocket, 차단·제한 상태 적용
-- 사용자·상품·메시지 신고, 자동 HIDDEN/RESTRICTED 조치와 감사 이력
-- 멱등성·한도·원장·REVERSAL 기반 포인트 송금 및 관리자 지급
-- 역할 기반 운영 화면, 재인증, 세션 정책, 불변 감사 로그
-- Host·CSRF·HTTPS/HSTS·CSP·쿠키·운영 미디어 분리 보안 설정
-- Redis fail-closed 회원가입 및 일반 로그인 실패 속도 제한
-
-## 기술 스택
-
-- Python / Django / Django Channels / Daphne
-- PostgreSQL 16
-- Redis 7 / channels-redis
-- Pillow, WhiteNoise
-- Docker Compose
-
-## 디렉터리 구조
-
-```text
-.
-├── config/                 # Django settings, ASGI/WSGI, URL 설정
-├── market/                 # 앱 모델·서비스·뷰·Consumer·템플릿
-├── market/migrations/      # PostgreSQL 스키마·트리거 마이그레이션
-├── tests/                  # PostgreSQL·Redis 통합 테스트
-├── docs/                   # 최종 산출물·독립 검증 안내·운영 문서
-├── Dockerfile
-├── docker-compose.yml
-├── .env.example
-├── requirements.txt
-└── manage.py
-```
+- 회원가입 시 프로필·0P 지갑을 원자적으로 생성하고, 로컬 데모에서는 `WELCOME_BONUS` 거래와 원장으로 가입 포인트를 지급합니다.
+- 상품 등록, 안전한 JPEG/PNG/WebP 재인코딩 업로드(최대 5장), 검색, 상태 전이, 내 스토어를 제공합니다.
+- 구매자가 상품 상세에서 채팅을 시작하면 판매자와 구매자의 채팅 목록에 같은 1:1 방이 나타납니다. 사용자가 WebSocket URL이나 방 ID를 직접 입력할 필요는 없습니다.
+- 지갑 송금, 신고·제한, `/operations/` 운영 화면, PostgreSQL 거래·원장 불변성 제약을 제공합니다.
 
 ## 사전 요구사항
 
 - Docker Desktop 또는 Docker Engine
-- Docker Compose v2 (`docker compose` 명령)
+- Docker Compose v2 (`docker compose`)
 
-## 환경변수 준비
-
-개발용 예시를 복사합니다.
+## 깨끗한 환경에서 처음 실행하기
 
 ```bash
 cp .env.example .env
-```
-
-Windows PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-`.env.example`의 DB/Redis 자격증명은 로컬 Compose 개발 전용 예시입니다. 운영에서는 별도 비밀값, 운영 Host, HTTPS CSRF Origin, 프록시 정책을 사용해야 합니다.
-
-## 최초 실행
-
-```bash
 docker compose up -d --build
 docker compose ps
 docker compose logs -f web
 ```
 
-웹 주소: <http://localhost:8000/>
+Windows PowerShell에서는 첫 줄을 다음으로 바꿉니다.
 
-8000 포트를 다른 프로그램이 사용 중이면 `.env`의 `WEB_PORT=18000`처럼 변경한 뒤 `http://localhost:18000/`으로 접속합니다. Compose project name 변경만으로는 호스트 포트 충돌이 해결되지 않습니다.
+```powershell
+Copy-Item .env.example .env
+```
 
-The web container applies committed migrations automatically at startup. `docker compose ps` confirms container startup only; it does not prove that migrations are complete. Follow `docker compose logs -f web` and wait for committed migrations to finish without an error and for Daphne to print `Listening on TCP address`. Press `Ctrl+C` only to stop log follow; the containers keep running. On a fresh database, do not run a separate `manage.py migrate` concurrently with `docker compose up`. In production, use one dedicated migration job rather than allowing multiple web replicas to migrate concurrently.
+`docker compose ps`는 컨테이너가 시작되었는지만 보입니다. 실제 준비 완료는 `web` 로그에서 **migration 오류 없이 적용이 끝난 것**과 Daphne의 `Listening on TCP address` 메시지를 확인해야 합니다. `Ctrl+C`는 로그 보기만 끝내며 컨테이너는 계속 실행됩니다.
 
-## 마이그레이션 및 검사
+web 컨테이너는 시작 시 committed migration을 자동 적용합니다. fresh DB에서 `up` 직후 별도의 `manage.py migrate`를 동시에 실행하지 마세요. 운영의 여러 web replica에서는 자동 migration 대신 하나의 전용 migration job을 사용해야 합니다.
+
+로그 확인 뒤 기본 카테고리를 준비합니다. 두 번 실행해도 중복되지 않습니다.
 
 ```bash
+docker compose exec -T web python manage.py seed_categories
 docker compose exec -T web python manage.py check
 docker compose exec -T web python manage.py makemigrations --check
 docker compose exec -T web python manage.py migrate --check
 ```
 
-`migrate --check` only reports whether unapplied migrations exist; it does not apply migrations.
+기본 접속 주소는 <http://localhost:8000/>입니다. 8000 포트가 사용 중이면 `.env`에서 `WEB_PORT=18000`처럼 바꾸고, <http://localhost:18000/>으로 접속합니다. Compose project name을 바꾸는 것만으로 호스트 포트 충돌은 해결되지 않습니다.
 
-## 전체 테스트
+## 로컬 데모 데이터와 사용자 흐름
 
-실제 PostgreSQL·Redis 환경의 전체 테스트 명령입니다.
+`.env.example`은 로컬 시연 편의를 위해 다음 값을 사용합니다.
+
+```env
+WELCOME_BONUS_ENABLED=true
+WELCOME_BONUS_AMOUNT=10000
+```
+
+지갑은 언제나 먼저 **0P**로 만들어집니다. 위 설정이 true이면 같은 가입 트랜잭션에서 `WELCOME_BONUS` 거래와 CREDIT 원장이 하나 생성되어 최종 잔액이 10,000P가 됩니다. 운영에서 가입 프로모션을 제공하지 않으면 `WELCOME_BONUS_ENABLED=false`로 설정합니다.
+
+1. 판매자 계정을 `/signup/`에서 만들고 지갑에서 가입 포인트를 확인합니다.
+2. 판매자로 로그인해 **상품 등록**을 선택하고 카테고리·한국어 상품명·설명·이미지를 입력합니다. 카테고리가 없다면 위 `seed_categories` 명령을 실행합니다.
+3. 상품 상태를 `판매 시작(ACTIVE)`으로 바꿉니다.
+4. 다른 브라우저 또는 시크릿 창에서 구매자 계정을 만듭니다.
+5. 구매자가 상품 상세에서 **판매자에게 채팅하기**를 누르고 메시지를 보냅니다.
+6. 판매자와 구매자 모두 상단 **채팅** 메뉴에서 같은 방을 열어 답장합니다. 새로고침해도 저장된 메시지가 보입니다.
+7. 구매자는 **지갑**에서 판매자 username으로 송금합니다. 존재하지 않는 username은 화면 내 입력 오류로 처리되며 거래가 생성되지 않습니다.
+
+신규 채팅은 ACTIVE 상품에서만 만들 수 있습니다. SOLD/HIDDEN/DELETED/DRAFT 상품에서는 새 방을 만들 수 없고, 기존 상품 채팅은 거래 후속 협의를 위해 채팅 목록에서 보존됩니다. RESERVED 상품도 신규 방 생성은 허용하지 않습니다.
+
+### 채팅 개발자 확인
+
+일반 사용자는 raw WebSocket URL을 입력하지 않습니다. 상세 페이지 JavaScript가 자동 연결합니다. 개발자 진단 시 기본 설정은 `ws://localhost:8000/ws/chat/<room-public-id>/`이며, `WEB_PORT=18000`이면 `ws://localhost:18000/ws/chat/<room-public-id>/`입니다. HTTP와 WebSocket은 같은 호스트 포트를 사용합니다.
+
+## 관리자 준비와 URL 정책
+
+먼저 일반 회원가입으로 계정을 만든 후, 로컬 개발 DB에서 역할을 부여합니다.
+
+```bash
+docker compose exec -T web python manage.py promote_user your-admin-username --role SUPERADMIN
+docker compose exec -T web python manage.py list_admin_users
+```
+
+명령은 존재하지 않는 username 또는 허용되지 않은 role을 오류로 처리하고, 변경 전후 role만 출력합니다. 비밀번호는 출력하지 않습니다. 운영 화면은 <http://localhost:8000/operations/login/>이며 역할 기반 운영 UI는 `/operations/`입니다.
+
+`/admin/`은 프로젝트의 공식 운영 UI가 아니며 외부 URL로 노출하지 않습니다. Django의 `is_staff`/`is_superuser`는 `/admin/` 접근용 Django 기본 속성이고, 프로젝트 운영 권한은 `USER`, `MODERATOR`, `ADMIN`, `SUPERADMIN`의 `role` 필드로 판정합니다.
+
+## 미디어 저장소와 권한
+
+상품 이미지는 호스트 bind mount가 아닌 Compose named volume `media_data`에 저장합니다. 시작 스크립트가 `/app/media`와 `/app/staticfiles` 소유권을 `appuser`에게 초기화한 뒤 Django를 비루트 사용자로 실행합니다. 따라서 Ubuntu Docker Engine과 Docker Desktop 모두 fresh clone 후 수동 `chmod 777` 또는 `chown` 없이 업로드할 수 있습니다. `docker compose down` 후에도 이미지는 유지되고, `docker compose down -v`는 PostgreSQL 및 미디어 named volume까지 삭제합니다.
+
+## 시연용 DEBUG=False
+
+기능 개발은 `.env.example`의 `DJANGO_DEBUG=true`로 시작합니다. localhost에서 사용자 오류 페이지를 시연하려면 `.env`에서 `DJANGO_DEBUG=false`, `DJANGO_LOCAL_DEMO_MODE=true`로 바꾼 뒤 재기동합니다. 이 모드는 localhost 전용으로 강제되며 HTTPS redirect와 Secure 쿠키를 끄므로 **인터넷에 공개하면 안 됩니다**. 실제 운영 `DEBUG=false`는 HTTPS TLS proxy, 안전한 secret, 비개발 DB/Redis 자격증명, 허용 Host와 HTTPS CSRF origin이 필요합니다. [보안 문서](docs/28_security_hardening.md)의 운영 체크리스트를 따르세요.
+
+없는 URL은 `DEBUG=false`에서 사용자용 400/403/404/500 템플릿으로 처리되며 내부 URLconf·view 이름·스택 정보를 표시하지 않습니다.
+
+## 테스트
+
+실제 PostgreSQL·Redis 컨테이너에서 실행합니다.
 
 ```bash
 docker compose exec -T web python manage.py test tests --noinput
 ```
 
-기대 결과는 `Ran 77 tests ... OK`입니다. Redis fail-closed 테스트 중 의도적으로 Redis backend 오류 로그가 출력될 수 있습니다. 이는 장애 시 요청을 안전하게 거부하는지 확인하는 테스트이며, 실제 HTTP 응답에는 예외나 스택 트레이스가 노출되지 않습니다.
+이전 기준은 77개 테스트였습니다. 현재 수정에서는 P0/P1 사용자 흐름 테스트가 추가되므로, 결과 수는 실행 출력으로 확인하고 검증 보고에 기록합니다. Redis fail-closed 테스트는 의도적으로 backend 오류 로그를 남길 수 있으나, 해당 HTTP 응답에는 스택 트레이스가 노출되지 않아야 합니다.
 
-## 관리자 계정 준비
-
-관리자 계정이나 비밀번호는 저장소에 포함하지 않습니다. 먼저 일반 회원가입으로 계정을 만든 뒤, 로컬 개발 DB에서 Django shell을 통해 역할을 명시적으로 부여합니다.
-
-```bash
-docker compose exec -T web python manage.py shell
-```
-
-```python
-from market.models import User
-user = User.objects.get(username="your-admin-username")
-user.role = User.Role.SUPERADMIN  # 필요한 최소 역할을 선택
-user.save(update_fields=["role"])
-```
-
-운영 환경에서는 초기 관리자 생성·역할 부여를 승인된 운영 절차와 감사 로그 정책으로 처리해야 합니다. 관리자 로그인은 `/operations/login/`, 운영 화면은 `/operations/`입니다.
-
-## WebSocket 채팅 확인
-
-1. 두 사용자로 로그인하고 전체 채팅 또는 1:1 채팅방을 준비합니다.
-2. 브라우저 개발자 도구 또는 WebSocket 클라이언트에서 다음 경로로 세션 쿠키를 포함해 연결합니다.
-
-   ```text
-   ws://localhost:8000/ws/chat/<chat-room-public-id>/
-   ```
-
-   This is the default `WEB_PORT=8000` example. HTTP and WebSocket use the same host port: with `.env` `WEB_PORT=18000`, use `http://localhost:18000/` and `ws://localhost:18000/ws/chat/<chat-room-public-id>/`.
-
-3. `{"content":"hello"}` 형식으로 전송하면 같은 방의 다른 연결에 전달되고 DB에 저장됩니다.
-
-운영 HTTPS 환경에서는 반드시 `wss://`와 동일 출처 연결을 사용합니다.
-
-## 종료 및 데이터 초기화
-
-컨테이너 종료:
+## 종료와 데이터 초기화
 
 ```bash
 docker compose down
+docker compose down -v  # PostgreSQL 및 media_data까지 삭제하는 로컬 초기화
 ```
 
-PostgreSQL 볼륨까지 삭제하는 로컬 개발 초기화(복구 불가):
+## 문제 해결
 
-```bash
-docker compose down -v
-```
-
-로컬 업로드 미디어도 초기화하려면 `media/`를 별도로 삭제해야 합니다. 이 디렉터리는 Git과 제출 ZIP에 포함되지 않습니다.
+- 상품 등록에 카테고리가 없으면 `seed_categories`를 실행합니다.
+- `web` 로그에 migration 오류가 있으면 `docker compose down -v`로 로컬 데이터만 초기화한 뒤 처음 실행 순서를 다시 수행합니다.
+- 이미지 업로드 실패 시 `docker compose ps`로 web이 최신 이미지인지 확인합니다. named volume 방식에서는 호스트 media 권한을 수동 변경하지 않습니다.
+- 채팅이 보이지 않으면 두 계정이 상품의 판매자·구매자인지, 상품이 ACTIVE일 때 방을 만들었는지, 상단 **채팅** 메뉴를 열었는지 확인합니다.
 
 ## 문서
 
 - [§28 최종 산출물](docs/tiny-secondhand-platform-section28-final.md)
-- [최종 구현 기준 설계 변경사항](docs/as-built-design-deviations.md)
+- [최종 구현 기준 설계 차이](docs/as-built-design-deviations.md)
 - [독립 검증 안내서](docs/independent-verification-guide.md)
-- [§28-10 보안 강화 문서](docs/28_security_hardening.md)
-- [인증 rate-limit 후속 검증](docs/followup-auth-rate-limit-verification.md)
+- [§28-10 보안 문서](docs/28_security_hardening.md)
 - [운영 모니터링 runbook](docs/operations_monitoring.md)
-
-## 운영 배포 전 별도 확인
-
-- TLS 프록시만 외부 노출하고 웹·PostgreSQL·Redis 직접 포트를 비공개로 유지
-- 외부 `X-Forwarded-Proto` 제거 후 프록시가 자체 HTTPS 값을 설정
-- 실제 인증서·갱신·방화벽·보안 그룹·네트워크 ACL 검증
-- 시크릿 매니저 기반 자격증명 주입과 DB 백업·복구 훈련
-- SIEM/경보 연동, 관리자 MFA, 계정·IP 단독 로그인 제한 및 rate-limit 고도화
-- 의존성·컨테이너 이미지 정기 취약점 스캔
+- [fresh-clone 사용성 후속 검증](docs/followup-fresh-clone-usability-verification.md)

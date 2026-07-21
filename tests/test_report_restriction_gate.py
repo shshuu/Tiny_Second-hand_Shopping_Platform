@@ -6,7 +6,7 @@ from django.urls import reverse
 
 from market.models import AuditLog, Category, Product, Report, User
 from market.services import (
-    change_product_status, create_report, direct_room, global_room,
+    change_product_status, create_report, direct_room,
     register_user, send_message, transfer, transition_report,
 )
 
@@ -46,12 +46,12 @@ class ReportAndRestrictionGateTests(TestCase):
             response=self.client.post(reverse("product_create"),{"category":self.category.pk,"title":"blocked","description":"x","price":1,"condition":"USED"})
             self.assertEqual(response.status_code,403)
             with self.assertRaises(ValidationError): change_product_status(seller=self.a,product=self.product,status=Product.Status.ACTIVE)
-            with self.assertRaises(ValidationError): send_message(sender=self.a,room=global_room(),content="global blocked")
+            with self.assertRaises(ValidationError): send_message(sender=self.a,room=self.direct,content="direct blocked")
             with self.assertRaises(ValidationError): send_message(sender=self.a,room=self.direct,content="direct blocked")
             with self.assertRaises(ValidationError): transfer(sender=self.a,recipient=self.b,amount=1,idempotency_key=uuid.uuid4())
             # Reports remain available (and rate limited) for safety and appeals.
             self.assertIsNotNone(create_report(reporter=self.a,target_type=Report.Target.USER,target_id=report_target.public_id,reason="ABUSE"))
         self.a.status=User.Status.ACTIVE; self.a.save(update_fields=["status"])
         change_product_status(seller=self.a,product=self.product,status=Product.Status.ACTIVE)
-        self.assertEqual(send_message(sender=self.a,room=global_room(),content="restored").sender,self.a)
+        self.assertEqual(send_message(sender=self.a,room=self.direct,content="restored").sender,self.a)
         self.assertEqual(transfer(sender=self.a,recipient=self.b,amount=1,idempotency_key=uuid.uuid4()).transaction_type,"USER_TRANSFER")
