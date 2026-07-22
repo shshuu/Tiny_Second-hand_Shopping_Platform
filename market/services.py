@@ -6,7 +6,7 @@ from django.contrib.auth import authenticate
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import F, Sum
+from django.db.models import DateTimeField, F, OuterRef, Q, Subquery, Sum
 from django.utils import timezone
 from redis.exceptions import RedisError
 from .models import AuditLog, ChatMessage, ChatParticipant, ChatReadState, ChatRoom, LedgerEntry, Notification, Product, Profile, Purchase, Report, SecurityEvent, User, Wallet, WalletTransaction
@@ -142,7 +142,12 @@ def direct_room(*,sender,recipient,product=None):
         raise ValidationError("현재 이 상품으로 새 채팅을 시작할 수 없습니다.")
     for room in ChatRoom.objects.filter(room_type=ChatRoom.Type.DIRECT,related_product=product).prefetch_related("participants"):
         if {p.user_id for p in room.participants.all()} == {sender.pk,recipient.pk}: return room
-    room=ChatRoom.objects.create(room_type=ChatRoom.Type.DIRECT,related_product=product); ChatParticipant.objects.bulk_create([ChatParticipant(room=room,user=sender),ChatParticipant(room=room,user=recipient)]); return room
+    room=ChatRoom.objects.create(room_type=ChatRoom.Type.DIRECT,related_product=product)
+    ChatParticipant.objects.bulk_create([ChatParticipant(room=room,user=sender),ChatParticipant(room=room,user=recipient)])
+    # A null marker means "never read". Existing rooms without a row are
+    # handled the same way by unread_chat_count().
+    ChatReadState.objects.bulk_create([ChatReadState(room=room,user=sender),ChatReadState(room=room,user=recipient)])
+    return room
 
 @transaction.atomic
 def change_product_status(*, seller, product, status):
@@ -179,8 +184,25 @@ def purchase_product(*, buyer, product_id):
     return purchase
 
 def unread_chat_count(user):
-    from django.db.models import Count, Q
-    return ChatMessage.objects.filter(room__participants__user=user,status=ChatMessage.Status.VISIBLE).exclude(sender=user).filter(Q(room__read_states__user=user,room__read_states__last_read_at__lt=F("created_at"))|Q(room__read_states__user=user,room__read_states__last_read_at__isnull=True)|Q(room__read_states__isnull=True)).distinct().count()
+    last_read = ChatReadState.objects.filter(room_id=OuterRef("room_id"), user_id=user.pk).values("last_read_at")[:1]
+    return (
+        ChatMessage.objects.filter(room__participants__user=user, status=ChatMessage.Status.VISIBLE)
+        .exclude(sender=user)
+        .annotate(_last_read_at=Subquery(last_read, output_field=DateTimeField()))
+        .filter(Q(_last_read_at__isnull=True) | Q(created_at__gt=F("_last_read_at")))
+        .distinct()
+        .count()
+    )
+
+def unread_chat_count_for_room(*, room, user):
+    last_read = ChatReadState.objects.filter(room_id=room.pk, user_id=user.pk).values("last_read_at")[:1]
+    return (
+        ChatMessage.objects.filter(room=room, status=ChatMessage.Status.VISIBLE)
+        .exclude(sender=user)
+        .annotate(_last_read_at=Subquery(last_read, output_field=DateTimeField()))
+        .filter(Q(_last_read_at__isnull=True) | Q(created_at__gt=F("_last_read_at")))
+        .count()
+    )
 
 @transaction.atomic
 def mark_room_read(*, room, user):
@@ -205,7 +227,17 @@ def create_report(*,reporter,target_type,target_id,reason,description=""):
 def transition_report(*, actor, report, status, reason):
     allowed={Report.Status.PENDING:{Report.Status.REVIEWING,Report.Status.REJECTED},Report.Status.REVIEWING:{Report.Status.ACCEPTED,Report.Status.REJECTED,Report.Status.RESOLVED},Report.Status.ACCEPTED:{Report.Status.RESOLVED}}
     if actor.role not in {User.Role.MODERATOR,User.Role.ADMIN,User.Role.SUPERADMIN} or not reason.strip() or status not in allowed.get(report.status,set()): raise ValidationError("허용되지 않은 신고 상태 전이입니다.")
-    before=report.status; report.status=status; report.save(update_fields=["status"]); AuditLog.objects.create(actor=actor,action="report.transition",target=str(report.public_id),reason=f"{before}->{status}: {reason.strip()}"); return report
+    before=report.status; report.status=status; report.save(update_fields=["status"])
+    AuditLog.objects.create(actor=actor,action="report.transition",target=str(report.public_id),reason=f"{before}->{status}: {reason.strip()}")
+    # A moderator's accepted product report is an explicit temporary content
+    # action. Rejection deliberately leaves the listing state untouched.
+    if status == Report.Status.ACCEPTED and report.target_type == Report.Target.PRODUCT:
+        product=Product.objects.filter(public_id=report.target_id).first()
+        if product and product.status not in {Product.Status.HIDDEN, Product.Status.DELETED}:
+            before_product=product.status
+            product.status=Product.Status.HIDDEN; product.save(update_fields=["status","updated_at"])
+            AuditLog.objects.create(actor=actor,action="report.accept_hide_product",target=str(product.public_id),reason=f"{before_product}->HIDDEN: {reason.strip()}")
+    return report
 
 
 def _require_role(actor, roles):

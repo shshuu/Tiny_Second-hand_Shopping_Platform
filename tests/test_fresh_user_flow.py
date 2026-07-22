@@ -84,6 +84,16 @@ class UserFacingFlowTests(TestCase):
         self.client.force_login(outsider)
         self.assertEqual(self.client.get(reverse("chat_room", args=[room.public_id])).status_code, 404)
 
+    def test_http_chat_post_does_not_render_model_object_text(self):
+        self.client.force_login(self.buyer)
+        self.client.post(reverse("start_product_chat", args=[self.product.public_id]))
+        room=ChatRoom.objects.get(related_product=self.product)
+        response=self.client.post(reverse("chat_room", args=[room.public_id]), {"content":"plain HTTP fallback"})
+        self.assertEqual(response.status_code, 302)
+        response=self.client.get(reverse("chat_room", args=[room.public_id]))
+        self.assertNotContains(response, "ChatMessage Object")
+        self.assertContains(response, "plain HTTP fallback")
+
     def test_new_product_chat_is_blocked_after_sold_but_existing_room_remains(self):
         self.client.force_login(self.buyer)
         self.client.post(reverse("start_product_chat", args=[self.product.public_id]))

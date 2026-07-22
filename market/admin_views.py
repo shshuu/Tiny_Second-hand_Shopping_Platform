@@ -142,7 +142,8 @@ def reports(request):
     qs=Report.objects.select_related("reporter").order_by("-created_at")
     if request.GET.get("status") in Report.Status.values: qs=qs.filter(status=request.GET["status"])
     if request.GET.get("target_type") in Report.Target.values: qs=qs.filter(target_type=request.GET["target_type"])
-    return render(request,"market/ops_list.html",{"title":"Reports","page_obj":_page(request,qs),"kind":"reports"})
+    assignees=User.objects.filter(role__in=[User.Role.MODERATOR,User.Role.ADMIN,User.Role.SUPERADMIN],status=User.Status.ACTIVE).order_by("username")
+    return render(request,"market/ops_list.html",{"title":"Reports","page_obj":_page(request,qs),"kind":"reports","assignees":assignees})
 
 
 @ops_required({User.Role.MODERATOR, User.Role.ADMIN, User.Role.SUPERADMIN})

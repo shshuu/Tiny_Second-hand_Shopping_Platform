@@ -15,7 +15,7 @@ from redis.exceptions import RedisError
 from django.shortcuts import get_object_or_404, redirect, render
 from .forms import ChatMessageForm, ProductForm, ProductImageForm, ProfileForm, ReportForm, SafePasswordChangeForm, SignUpForm
 from .models import Block, Category, ChatMessage, ChatRoom, Notification, Product, ProductImage, Report, SecurityEvent, User, WalletTransaction
-from .services import change_product_status, create_report, direct_room, mark_room_read, purchase_product, register_user, send_message, unread_chat_count
+from .services import change_product_status, create_report, direct_room, mark_room_read, purchase_product, register_user, send_message, unread_chat_count, unread_chat_count_for_room
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,9 @@ def product_create(request):
     form=ProductForm(request.POST or None); image_form=ProductImageForm(request.POST or None, request.FILES or None)
     category_available = Category.objects.filter(is_active=True).exists()
     if request.method == "POST" and form.is_valid() and image_form.is_valid():
-        product=form.save(commit=False); product.seller=request.user; product.save()
+        product=form.save(commit=False); product.seller=request.user
+        product.status=Product.Status.ACTIVE if form.cleaned_data["start_selling"] else Product.Status.DRAFT
+        product.save()
         for index, image in enumerate(image_form.cleaned_data["images"]): ProductImage.objects.create(product=product, image=image, original_name=image.name[:255], mime_type=image.content_type, size=image.size, display_order=index)
         return redirect("product_detail", public_id=product.public_id)
     return render(request, "market/form.html", {"form":form, "image_form":image_form, "title":"상품 등록", "multipart":True, "category_available":category_available})
@@ -216,6 +218,7 @@ def chat_list(request):
     for room in rooms:
         room.counterparty = next((participant.user for participant in room.participants.all() if participant.user_id != request.user.pk), None)
         room.viewer_role = "판매자" if room.related_product and room.related_product.seller_id == request.user.pk else "구매자"
+        room.unread_count = unread_chat_count_for_room(room=room, user=request.user)
     return render(request, "market/chat_list.html", {"rooms": rooms})
 
 @login_required
@@ -229,7 +232,7 @@ def chat_room(request, public_id):
         except ValidationError as exc: form.add_error(None, exc.message)
     messages_qs=room.messages.filter(status="VISIBLE").select_related("sender").order_by("-created_at","-id")
     page=Paginator(messages_qs,50).get_page(request.GET.get("page"))
-    return render(request, "market/chat_room.html", {"room":room,"form":form,"messages":list(reversed(page.object_list)),"page_obj":page})
+    return render(request, "market/chat_room.html", {"room":room,"form":form,"chat_messages":list(reversed(page.object_list)),"page_obj":page})
 
 @login_required
 def submit_report(request, target_type, target_id):

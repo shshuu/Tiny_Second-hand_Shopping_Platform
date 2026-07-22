@@ -1,9 +1,12 @@
 from django.contrib.auth.views import LogoutView
 from django.urls import path
+from django.templatetags.static import static
+from django.views.generic import RedirectView
 from . import admin_views
 from .views import SafeLoginView, chat_list, chat_room, my_page, my_store, password_change, product_create, product_delete, product_detail, product_edit, product_list, product_purchase, product_status, profile_view, signup, start_product_chat, submit_report, toggle_block, wallet_view
 
 urlpatterns=[
+    path("favicon.ico", RedirectView.as_view(url=static("market/favicon.svg"), permanent=False)),
     path("operations/login/",admin_views.admin_login,name="admin_login"), path("operations/logout/",admin_views.admin_logout,name="admin_logout"),
     path("operations/",admin_views.dashboard,name="ops_dashboard"), path("operations/users/",admin_views.users,name="ops_users"), path("operations/users/create/",admin_views.create_user,name="ops_create_user"), path("operations/users/<uuid:public_id>/action/",admin_views.user_action,name="ops_user_action"),
     path("operations/products/",admin_views.products,name="ops_products"), path("operations/products/<uuid:public_id>/action/",admin_views.product_action,name="ops_product_action"), path("operations/reports/",admin_views.reports,name="ops_reports"), path("operations/reports/<uuid:public_id>/action/",admin_views.report_action,name="ops_report_action"), path("operations/reports/<uuid:public_id>/assign/",admin_views.assign_report_view,name="ops_report_assign"), path("operations/reports/<uuid:report_id>/direct-chat/",admin_views.reported_direct_chat,name="ops_reported_chat"), path("operations/messages/<uuid:public_id>/hide/",admin_views.hide_message,name="ops_message_hide"), path("operations/transactions/",admin_views.transactions,name="ops_transactions"), path("operations/transactions/<uuid:public_id>/",admin_views.transaction_detail,name="ops_transaction_detail"), path("operations/transactions/grant/",admin_views.grant_points,name="ops_grant"), path("operations/transactions/<uuid:public_id>/reverse/",admin_views.reverse_transaction,name="ops_reverse"), path("operations/audit/",admin_views.audit_logs,name="ops_audit"),

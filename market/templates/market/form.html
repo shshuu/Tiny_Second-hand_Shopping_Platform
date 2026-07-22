@@ -1,4 +1,4 @@
-{% extends 'market/base.html' %}
+{% extends 'market/base.html' %}{% load static %}
 {% block content %}
 <h1>{{ title }}</h1>
 {% if category_available is False %}<p class="notice">등록 가능한 카테고리가 없습니다. 관리자에게 카테고리 준비를 요청해 주세요.</p>{% endif %}
@@ -10,8 +10,5 @@
   {% endif %}
   <button type="submit">저장</button>
 </form>
-{% if image_form %}<script>
-const imageInput=document.querySelector('input[type=file][name=images]'); const imageCount=document.getElementById('image-count');
-if(imageInput){ imageInput.addEventListener('change',()=>{const count=imageInput.files.length; if(count>5){imageInput.value='';imageCount.textContent='이미지는 최대 5장만 선택할 수 있습니다. 선택을 다시 해주세요.';}else{imageCount.textContent=`선택한 이미지: ${count}장 / 최대 5장`;}}); }
-</script>{% endif %}
+{% if image_form %}<script src="{% static 'market/js/product_image_selection.js' %}" defer></script>{% endif %}
 {% endblock %}

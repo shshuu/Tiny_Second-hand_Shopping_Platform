@@ -1,14 +1,10 @@
-{% extends 'market/base.html' %}
+{% extends 'market/base.html' %}{% load static %}
 {% block content %}
-<h1>상품 채팅</h1>{% if room.related_product %}<p><a href="{% url 'product_detail' room.related_product.public_id %}">{{ room.related_product.title }}</a></p>{% if user != room.related_product.seller and room.related_product.status == 'ACTIVE' %}<form method="post" action="{% url 'product_purchase' room.related_product.public_id %}" onsubmit="return confirm('상품 가격으로 구매하시겠습니까?')">{% csrf_token %}<button type="submit" class="danger">구매하기 ({{ room.related_product.price }} P)</button></form>{% endif %}{% endif %}
-<div id="chat-messages">{% for message in messages %}<p><strong>{{ message.sender.display_name }}</strong>: {{ message.content }}</p>{% empty %}<p class="muted">메시지가 없습니다.</p>{% endfor %}</div>
+<h1>상품 채팅</h1>
+{% if room.related_product %}<p><a href="{% url 'product_detail' room.related_product.public_id %}">{{ room.related_product.title }}</a></p>{% if user != room.related_product.seller and room.related_product.status == 'ACTIVE' %}<form method="post" action="{% url 'product_purchase' room.related_product.public_id %}">{% csrf_token %}<button type="submit" class="danger">구매하기 ({{ room.related_product.price }} P)</button></form>{% endif %}{% endif %}
+<div id="chat-messages" data-chat-socket="{% if request.is_secure %}wss{% else %}ws{% endif %}://{{ request.get_host }}/ws/chat/{{ room.public_id }}/">{% for chat_message in chat_messages %}<p><strong>{{ chat_message.sender.display_name }}</strong>: {{ chat_message.content }}</p>{% empty %}<p class="muted">메시지가 없습니다.</p>{% endfor %}</div>
 {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">이전 메시지</a>{% endif %}
 <p id="chat-status" class="muted">연결 중…</p>
 <form id="chat-form" method="post">{% csrf_token %}{{ form.as_p }}<button type="submit">전송</button></form>
-<script>
-const statusNode=document.getElementById('chat-status'), form=document.getElementById('chat-form'), input=form.querySelector('[name=content]'), list=document.getElementById('chat-messages');
-const protocol=location.protocol==='https:'?'wss':'ws'; let socket;
-function connect(){socket=new WebSocket(`${protocol}://${location.host}/ws/chat/{{ room.public_id }}/`);socket.onopen=()=>statusNode.textContent='실시간 연결됨';socket.onclose=()=>{statusNode.textContent='연결이 끊겼습니다. 잠시 후 다시 연결합니다.';setTimeout(connect,2000)};socket.onmessage=(event)=>{const data=JSON.parse(event.data);if(data.error){statusNode.textContent='메시지를 전송할 수 없습니다.';return;}const line=document.createElement('p'),name=document.createElement('strong');name.textContent=data.sender;line.append(name,`: ${data.content}`);list.append(line);};}
-connect(); form.addEventListener('submit',(event)=>{if(socket&&socket.readyState===WebSocket.OPEN){event.preventDefault();socket.send(JSON.stringify({content:input.value}));input.value='';}});
-</script>
+<script src="{% static 'market/js/chat_room.js' %}" defer></script>
 {% endblock %}

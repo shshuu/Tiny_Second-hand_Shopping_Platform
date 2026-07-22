@@ -84,9 +84,9 @@ Distinct valid reporter accumulation can apply temporary `HIDDEN` to a product o
 
 ## 11. Tests and migrations
 
-The initial final PostgreSQL/Redis result was 73/73. Independent verification then identified two High public-authentication rate-limit gaps; the corrective follow-up recorded 77/77. A later fresh-clone usability review identified deployment and user-flow gaps. The current local Docker PostgreSQL/Redis verification result is **100/100 passed**; this is Codex's Docker verification, not a VMware Ubuntu browser run. See [fresh-clone usability follow-up](followup-fresh-clone-usability-verification.md). Migrations now run from `0001_initial` through `0006_purchase_and_chat_read_state`.
+The initial final PostgreSQL/Redis result was 73/73. Independent verification then identified two High public-authentication rate-limit gaps; the corrective follow-up recorded 77/77. A later fresh-clone usability review identified deployment and user-flow gaps. The current local Docker PostgreSQL/Redis verification result is **105/105 passed with `WELCOME_BONUS_ENABLED=true` and 105/105 passed with it false**; this is Codex's Docker verification, not a VMware Ubuntu browser run. Migrations run from `0001_initial` through `0006_purchase_and_chat_read_state`.
 
-After the submission-document cleanup, functional source code, Compose, settings, migrations, and tests were not changed; the full suite was therefore not rerun solely for documentation changes.
+The current follow-up moves browser WebSocket code to external same-origin static files so CSP remains `script-src 'self'`, adds persisted per-user unread markers for never-opened rooms, and documents local demo settings. These are implementation changes, not a claim that Codex performed the user's VMware browser acceptance.
 
 ## 12. Recommended tools versus completed verification
 

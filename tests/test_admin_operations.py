@@ -66,6 +66,21 @@ class AdminOperationTests(TransactionTestCase):
         with self.assertRaises(ValidationError): assign_report(actor=self.mod,report=assigned,assignee=self.admin,reason="bad",expected_version=1)
         self.assertTrue(AuditLog.objects.filter(action="report.assign",target=str(report.public_id)).exists())
 
+    def test_report_transition_ui_acceptance_hides_product_and_rejection_keeps_public(self):
+        report=Report.objects.create(reporter=self.user,target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM")
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.post(reverse("ops_report_action",args=[report.public_id]),{"status":"REVIEWING","reason":"no"}).status_code,403)
+        self.client.force_login(self.mod)
+        self.assertEqual(self.client.post(reverse("ops_report_action",args=[report.public_id]),{"status":"REVIEWING","reason":"triage"}).status_code,302)
+        self.assertEqual(self.client.post(reverse("ops_report_action",args=[report.public_id]),{"status":"ACCEPTED","reason":"policy violation"}).status_code,302)
+        report.refresh_from_db(); self.product.refresh_from_db()
+        self.assertEqual((report.status,self.product.status),(Report.Status.ACCEPTED,Product.Status.HIDDEN))
+        self.assertTrue(AuditLog.objects.filter(action="report.accept_hide_product",target=str(self.product.public_id)).exists())
+        rejected_product=Product.objects.create(seller=self.user,category=self.category,title="Keep",description="x",price=1,condition="USED",status=Product.Status.ACTIVE)
+        rejected=Report.objects.create(reporter=self.admin,target_type=Report.Target.PRODUCT,target_id=rejected_product.public_id,reason="SPAM")
+        self.assertEqual(self.client.post(reverse("ops_report_action",args=[rejected.public_id]),{"status":"REJECTED","reason":"not a violation"}).status_code,302)
+        rejected_product.refresh_from_db(); self.assertEqual(rejected_product.status,Product.Status.ACTIVE)
+
     @override_settings(ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE=2)
     def test_admin_login_rate_limit_is_hashed_and_fail_closed_policy(self):
         from market.admin_views import _login_key

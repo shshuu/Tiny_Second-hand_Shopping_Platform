@@ -36,8 +36,8 @@ The prior public wallet transfer form is no longer a transaction entry point. Or
 After rebuilding the Docker image, Codex ran the PostgreSQL/Redis suite in this local Docker environment:
 
 ```text
-Found 100 test(s).
-Ran 100 tests in 123.130s
+Found 105 test(s).
+Ran 105 tests with both `WELCOME_BONUS_ENABLED=true` and `WELCOME_BONUS_ENABLED=false`
 OK
 ```
 
@@ -88,4 +88,8 @@ docker compose exec -T web python manage.py list_admin_users
 9. Select six images and confirm the immediate five-image client notice; then confirm the server still refuses more than five images.
 10. Check `/admin/`, `/operations/`, logout, and an unknown URL: ordinary users must not reach Django admin/operations data, logout returns to `/login/`, and the unknown URL must be a safe user-facing 404 when using the localhost DEBUG=false demonstration setting.
 11. Restart only web with `docker compose restart web` and confirm the image persists.
-12. Run `docker compose exec -T web python manage.py test tests --noinput`; expected result is `Ran 88 tests ... OK`.
+12. Run `docker compose exec -T web python manage.py test tests --noinput`; expected result is `Ran 105 tests ... OK`.
+
+## Latest corrective follow-up
+
+The browser-facing chat and unread scripts are external static files (`market/static/market/js/`) so the enforced CSP can retain `script-src 'self'` without `unsafe-inline`. `ChatReadState` rows with no timestamp, and historic rooms with no row, both mean unread received messages. The user reported VMware acceptance observations separately; Codex did not access that VM. Codex ran the corresponding Docker PostgreSQL/Redis suite with both welcome-bonus environment values.

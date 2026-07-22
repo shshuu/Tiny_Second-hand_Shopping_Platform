@@ -72,6 +72,19 @@ class PurchaseAndUnreadTests(TransactionTestCase):
         mark_room_read(room=room,user=self.buyer)
         self.assertEqual(unread_chat_count(self.buyer),0); self.assertTrue(ChatReadState.objects.filter(room=room,user=self.buyer).exists())
 
+    def test_never_opened_room_counts_unread_and_opening_one_room_preserves_other_room(self):
+        first=direct_room(sender=self.buyer, recipient=self.seller, product=self.product)
+        second_product=Product.objects.create(seller=self.seller,category=self.product.category,title="Second",description="x",price=10,condition="USED",status=Product.Status.ACTIVE)
+        second=direct_room(sender=self.buyer, recipient=self.seller, product=second_product)
+        # Simulate a historic room that predates ChatReadState.
+        ChatReadState.objects.filter(room=first, user=self.buyer).delete()
+        send_message(sender=self.seller, room=first, content="first unread")
+        send_message(sender=self.seller, room=second, content="second unread")
+        send_message(sender=self.buyer, room=first, content="my own message")
+        self.assertEqual(unread_chat_count(self.buyer), 2)
+        mark_room_read(room=first, user=self.buyer)
+        self.assertEqual(unread_chat_count(self.buyer), 1)
+
     def test_concurrent_purchase_has_one_winner(self):
         barrier=threading.Barrier(2); outcomes=[]
         def run(user_id):

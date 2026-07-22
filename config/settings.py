@@ -23,6 +23,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [{"BACKEND":"django.template.backends.django.DjangoTemplates", "DIRS":[BASE_DIR / "templates"], "APP_DIRS":True, "OPTIONS":{"context_processors":["django.template.context_processors.request", "django.contrib.auth.context_processors.auth", "django.contrib.messages.context_processors.messages", "market.context_processors.navigation_counts"]}}]
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
+TEST_RUNNER = "config.test_runner.IsolatedSettingsTestRunner"
 database_url=os.getenv("DATABASE_URL")
 if not database_url:
     raise RuntimeError("DATABASE_URL must be configured; SQLite requires an explicit sqlite URL.")
