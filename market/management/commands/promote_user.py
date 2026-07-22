@@ -14,12 +14,12 @@ class Command(BaseCommand):
         try:
             user = User.objects.get(username=options["username"])
         except User.DoesNotExist as exc:
-            raise CommandError("No matching user exists.") from exc
+            raise CommandError(f"User '{options['username']}' does not exist.") from exc
         before, after = user.role, options["role"]
         if before == after:
-            self.stdout.write(f"{user.username}: role already {after}.")
+            self.stdout.write(f"User '{user.username}' role unchanged: {after} -> {after}.")
             return
         user.role = after
         user.save(update_fields=["role"])
         AuditLog.objects.create(action="user.role", target=str(user.public_id), reason=f"management-command: {before}->{after}")
-        self.stdout.write(self.style.SUCCESS(f"{user.username}: {before} -> {after}."))
+        self.stdout.write(self.style.SUCCESS(f"User '{user.username}' role changed: {before} -> {after}"))

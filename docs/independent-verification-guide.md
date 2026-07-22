@@ -37,7 +37,7 @@ The web container applies committed migrations automatically. Wait for its log t
 docker compose exec -T web python manage.py test tests --noinput
 ```
 
-Run `docker compose exec -T web python manage.py seed_categories` after web startup and before browser verification. Expected current result: `Ran 88 tests ... OK` on PostgreSQL and Redis. Afterward, confirm the test DB is removed and no `admin-login:*` or `public-rate:*` test key remains in Redis. See [fresh-clone usability follow-up](followup-fresh-clone-usability-verification.md) for the later user-flow corrections and evidence boundary.
+Run `docker compose exec -T web python manage.py seed_categories` after web startup and before browser verification. Expected current result: `Ran 100 tests ... OK` on PostgreSQL and Redis. Afterward, confirm the test DB is removed and no `admin-login:*` or `public-rate:*` test key remains in Redis. See [fresh-clone usability follow-up](followup-fresh-clone-usability-verification.md) for the later user-flow corrections and evidence boundary.
 
 ## Main URLs
 

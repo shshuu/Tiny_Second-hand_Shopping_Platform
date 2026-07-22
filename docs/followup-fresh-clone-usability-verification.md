@@ -25,13 +25,19 @@ An independent user performed the original Ubuntu 22.04 Desktop/VMware browser a
 - SOLD, HIDDEN, DELETED, DRAFT, and RESERVED products cannot create a new room.
 - Existing rooms remain visible after a product becomes SOLD/HIDDEN/DELETED for transaction follow-up and audit retention; hidden messages are not shown.
 
+## Purchase-only points and persistent unread state
+
+The prior public wallet transfer form is no longer a transaction entry point. Ordinary users can move points only by purchasing an ACTIVE product from its detail page or an existing participant direct-chat room. `purchase_product()` locks the product and wallets, records a `Purchase` and the append-only transaction/ledger entries, then changes the product to SOLD in one database transaction. RESERVED and SOLD products remain viewable but cannot be purchased; SOLD retains existing participant chats and refuses new chats.
+
+`ChatReadState` stores one `(room, user)` read marker. The `/ws/unread/` authenticated WebSocket group sends only the recipient's total unread count; a reconnect receives the count recomputed from the database.
+
 ## Codex verification performed in this workspace
 
 After rebuilding the Docker image, Codex ran the PostgreSQL/Redis suite in this local Docker environment:
 
 ```text
-Found 88 test(s).
-Ran 88 tests in 112.596s
+Found 100 test(s).
+Ran 100 tests in 123.130s
 OK
 ```
 

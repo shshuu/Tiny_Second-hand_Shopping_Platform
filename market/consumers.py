@@ -15,9 +15,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if hasattr(self,"group"): await self.channel_layer.group_discard(self.group,self.channel_name)
     async def receive(self, text_data=None, bytes_data=None):
         if bytes_data or not text_data or len(text_data)>4096: await self.close(code=4400); return
-        try: content=json.loads(text_data).get("content",""); message=await self.persist(content)
+        try: content=json.loads(text_data).get("content",""); message, recipient_id=await self.persist(content)
         except Exception: await self.send_json({"error":"message_rejected"}); return
         await self.channel_layer.group_send(self.group,{"type":"chat.message","id":str(message.public_id),"content":message.content,"sender":message.sender.display_name})
+        await self.channel_layer.group_send(f"user.unread.{recipient_id}", {"type":"unread.update"})
     async def chat_message(self,event): await self.send_json({"id":event["id"],"content":event["content"],"sender":event["sender"]})
     async def send_json(self,data): await self.send(text_data=json.dumps(data))
     @database_sync_to_async
@@ -27,4 +28,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def persist(self,content):
         room=ChatRoom.objects.get(public_id=self.room_id)
-        return send_message(sender=self.scope["user"],room=room,content=content)
+        message=send_message(sender=self.scope["user"],room=room,content=content)
+        recipient=room.participants.exclude(user=self.scope["user"]).values_list("user_id",flat=True).first()
+        return message, recipient
+
+class UnreadConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        user=self.scope.get("user",AnonymousUser())
+        if not user.is_authenticated: await self.close(code=4401); return
+        self.group=f"user.unread.{user.pk}"; await self.channel_layer.group_add(self.group,self.channel_name); await self.accept()
+        # A reconnect gets its authoritative count from persistent read state,
+        # not from events that may have been missed while disconnected.
+        await self.send(text_data=json.dumps({"unread_count": await self.count_unread()}))
+    async def disconnect(self, code):
+        if hasattr(self,"group"): await self.channel_layer.group_discard(self.group,self.channel_name)
+    async def unread_update(self,event):
+        count=await self.count_unread(); await self.send(text_data=json.dumps({"unread_count":count}))
+    @database_sync_to_async
+    def count_unread(self):
+        from .services import unread_chat_count
+        return unread_chat_count(self.scope["user"])

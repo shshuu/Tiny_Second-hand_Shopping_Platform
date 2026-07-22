@@ -6,10 +6,10 @@ from django.contrib.auth import authenticate
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
+from django.db.models import F, Sum
 from django.utils import timezone
 from redis.exceptions import RedisError
-from .models import AuditLog, ChatMessage, ChatParticipant, ChatRoom, LedgerEntry, Notification, Product, Profile, Report, SecurityEvent, User, Wallet, WalletTransaction
+from .models import AuditLog, ChatMessage, ChatParticipant, ChatReadState, ChatRoom, LedgerEntry, Notification, Product, Profile, Purchase, Report, SecurityEvent, User, Wallet, WalletTransaction
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,35 @@ def send_message(*,sender,room,content):
     content=content.strip()
     if not content or len(content)>1000: raise ValidationError("메시지 길이가 올바르지 않습니다.")
     _rate_limit(sender,"chat",settings.CHAT_RATE_LIMIT_PER_MINUTE)
-    return ChatMessage.objects.create(room=room,sender=sender,content=content)
+    message=ChatMessage.objects.create(room=room,sender=sender,content=content)
+    return message
+
+@transaction.atomic
+def purchase_product(*, buyer, product_id):
+    product=Product.objects.select_for_update().select_related("seller").get(pk=product_id)
+    if product.status != Product.Status.ACTIVE or product.seller_id == buyer.pk:
+        raise ValidationError("This product is not available for purchase.")
+    wallets=_lock_wallets(buyer.wallet.pk, product.seller.wallet.pk)
+    source,destination=wallets[buyer.wallet.pk],wallets[product.seller.wallet.pk]
+    if source.balance < product.price: raise ValidationError("Insufficient point balance.")
+    if Purchase.objects.filter(product=product).exists(): raise ValidationError("This product has already been purchased.")
+    tx=WalletTransaction.objects.create(transaction_type=WalletTransaction.Type.TRANSFER,source=source,destination=destination,amount=product.price,idempotency_key=uuid.uuid4(),memo=f"Product purchase: {product.title}",product=product,created_by=buyer)
+    _entry(tx,source,"DEBIT",tx.amount); _entry(tx,destination,"CREDIT",tx.amount)
+    source.save(update_fields=["balance"]); destination.save(update_fields=["balance"])
+    product.status=Product.Status.SOLD; product.save(update_fields=["status","updated_at"])
+    purchase=Purchase.objects.create(product=product,buyer=buyer,seller=product.seller,amount=tx.amount,transaction=tx)
+    AuditLog.objects.create(actor=buyer,action="product.purchase",target=str(product.public_id),reason=str(purchase.public_id))
+    _notify(product.seller,"PRODUCT_SOLD","Product sold",f"{product.title} was purchased.")
+    return purchase
+
+def unread_chat_count(user):
+    from django.db.models import Count, Q
+    return ChatMessage.objects.filter(room__participants__user=user,status=ChatMessage.Status.VISIBLE).exclude(sender=user).filter(Q(room__read_states__user=user,room__read_states__last_read_at__lt=F("created_at"))|Q(room__read_states__user=user,room__read_states__last_read_at__isnull=True)|Q(room__read_states__isnull=True)).distinct().count()
+
+@transaction.atomic
+def mark_room_read(*, room, user):
+    if not room.participants.filter(user=user).exists(): raise ValidationError("Chat permission is required.")
+    ChatReadState.objects.update_or_create(room=room,user=user,defaults={"last_read_at":timezone.now()})
 def create_report(*,reporter,target_type,target_id,reason,description=""):
     targets={Report.Target.USER:User,Report.Target.PRODUCT:Product,Report.Target.MESSAGE:ChatMessage}; target=targets[target_type].objects.filter(public_id=target_id).first()
     if not target: raise ValidationError("신고 대상을 찾을 수 없습니다.")

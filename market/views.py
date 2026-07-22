@@ -13,9 +13,9 @@ from django.core.paginator import Paginator
 from django.http import Http404, HttpResponseForbidden
 from redis.exceptions import RedisError
 from django.shortcuts import get_object_or_404, redirect, render
-from .forms import ChatMessageForm, ProductForm, ProductImageForm, ProfileForm, ReportForm, SafePasswordChangeForm, SignUpForm, TransferForm
+from .forms import ChatMessageForm, ProductForm, ProductImageForm, ProfileForm, ReportForm, SafePasswordChangeForm, SignUpForm
 from .models import Block, Category, ChatMessage, ChatRoom, Notification, Product, ProductImage, Report, SecurityEvent, User, WalletTransaction
-from .services import change_product_status, create_report, direct_room, register_user, send_message, transfer
+from .services import change_product_status, create_report, direct_room, mark_room_read, purchase_product, register_user, send_message, unread_chat_count
 
 logger = logging.getLogger(__name__)
 
@@ -115,8 +115,16 @@ def product_create(request):
 
 def product_detail(request, public_id):
     product=get_object_or_404(Product.objects.select_related("seller", "category").prefetch_related("images"), public_id=public_id)
-    if product.status != Product.Status.ACTIVE and product.seller_id != getattr(request.user, "id", None): raise Http404
+    if product.status in {Product.Status.HIDDEN, Product.Status.DELETED, Product.Status.DRAFT} and product.seller_id != getattr(request.user, "id", None): raise Http404
     return render(request, "market/product_detail.html", {"product":product})
+
+@login_required
+def product_purchase(request, public_id):
+    if request.method != "POST": return HttpResponseForbidden("Invalid request")
+    product=get_object_or_404(Product,public_id=public_id)
+    try: purchase_product(buyer=request.user,product_id=product.pk); messages.success(request,"Purchase completed.")
+    except ValidationError as exc: messages.error(request,exc.message)
+    return redirect("product_detail",public_id=product.public_id)
 
 @login_required
 def product_edit(request, public_id):
@@ -146,7 +154,8 @@ def profile_view(request):
     if request.method == "POST" and form.is_valid():
         request.user.display_name=form.cleaned_data["display_name"].strip(); request.user.save(update_fields=["display_name"])
         request.user.profile.bio=form.cleaned_data["bio"].strip(); request.user.profile.save(update_fields=["bio"])
-        return redirect("profile")
+        messages.success(request, "프로필이 저장되었습니다.")
+        return redirect("my_page")
     return render(request, "market/form.html", {"form":form,"title":"프로필"})
 
 @login_required
@@ -213,6 +222,7 @@ def chat_list(request):
 def chat_room(request, public_id):
     room=get_object_or_404(ChatRoom.objects.prefetch_related("participants", "messages__sender"), public_id=public_id)
     if not room.participants.filter(user=request.user).exists(): raise Http404
+    mark_room_read(room=room,user=request.user)
     form=ChatMessageForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         try: send_message(sender=request.user, room=room, content=form.cleaned_data["content"]); return redirect("chat_room", public_id=room.public_id)
@@ -231,19 +241,8 @@ def submit_report(request, target_type, target_id):
 
 @login_required
 def wallet_view(request):
-    form=TransferForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        recipient=User.objects.filter(username=form.cleaned_data["recipient"]).first()
-        if recipient is None:
-            form.add_error("recipient", "송금할 수 없는 수신자입니다.")
-        else:
-            try: transfer(sender=request.user, recipient=recipient, amount=form.cleaned_data["amount"], idempotency_key=form.cleaned_data["idempotency_key"], memo=form.cleaned_data["memo"]); messages.success(request, "송금이 완료되었습니다."); return redirect("wallet")
-            except ValidationError as exc: form.add_error(None, exc.message)
-            except OperationalError:
-                logger.exception("Transfer transaction conflict")
-                form.add_error(None, "거래 처리 중 충돌이 발생했습니다. 동일한 요청 키로 다시 시도해 주세요.")
     transactions=WalletTransaction.objects.filter(Q(source=request.user.wallet)|Q(destination=request.user.wallet)).select_related("source__user","destination__user","created_by").order_by("-created_at")
-    return render(request, "market/wallet.html", {"form":form, "wallet":request.user.wallet, "transactions":transactions[:100]})
+    return render(request, "market/wallet.html", {"wallet":request.user.wallet, "transactions":transactions[:100]})
 
 def _error_page(request, status):
     return render(request, f"{status}.html", status=status)

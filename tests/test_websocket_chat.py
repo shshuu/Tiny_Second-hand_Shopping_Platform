@@ -8,8 +8,8 @@ from django.test import TransactionTestCase
 from django.test import override_settings
 from config.asgi import application
 from market.consumers import ChatConsumer
-from market.models import Block, Category, ChatMessage, Product, User
-from market.services import direct_room, register_user
+from market.models import Block, Category, ChatMessage, ChatReadState, Product, User
+from market.services import direct_room, mark_room_read, register_user, send_message, unread_chat_count
 
 class WebSocketChatTests(TransactionTestCase):
     def setUp(self):
@@ -24,6 +24,10 @@ class WebSocketChatTests(TransactionTestCase):
         client=Client(); client.force_login(user)
         cookie=client.cookies[settings.SESSION_COOKIE_NAME].value
         return WebsocketCommunicator(application, f"/ws/chat/{(room or self.room).public_id}/", headers=[(b"cookie", f"{settings.SESSION_COOKIE_NAME}={cookie}".encode())])
+    def _unread_communicator(self, user):
+        client=Client(); client.force_login(user)
+        cookie=client.cookies[settings.SESSION_COOKIE_NAME].value
+        return WebsocketCommunicator(application, "/ws/unread/", headers=[(b"cookie", f"{settings.SESSION_COOKIE_NAME}={cookie}".encode())])
     def test_direct_room_participants_exchange_persisted_message(self):
         first=self._communicator(self.a); second=self._communicator(self.b)
         async def run():
@@ -40,6 +44,49 @@ class WebSocketChatTests(TransactionTestCase):
             self.assertFalse((await anonymous.connect())[0])
             self.assertFalse((await other.connect())[0])
         async_to_sync(run)()
+
+    def test_anonymous_unread_connection_is_rejected(self):
+        anonymous=WebsocketCommunicator(application, "/ws/unread/")
+        async def run():
+            self.assertFalse((await anonymous.connect())[0])
+        async_to_sync(run)()
+
+    def test_unread_event_is_only_delivered_to_message_recipient(self):
+        sender=self._communicator(self.a)
+        recipient_unread=self._unread_communicator(self.b)
+        outsider_unread=self._unread_communicator(self.c)
+        async def run():
+            self.assertTrue((await sender.connect())[0])
+            self.assertTrue((await recipient_unread.connect())[0])
+            self.assertEqual((await recipient_unread.receive_json_from())["unread_count"], 0)
+            self.assertTrue((await outsider_unread.connect())[0])
+            self.assertEqual((await outsider_unread.receive_json_from())["unread_count"], 0)
+            await sender.send_to(text_data=json.dumps({"content":"recipient only"}))
+            await sender.receive_json_from()
+            self.assertEqual((await recipient_unread.receive_json_from())["unread_count"], 1)
+            self.assertTrue(await outsider_unread.receive_nothing(timeout=0.2))
+            await sender.disconnect(); await recipient_unread.disconnect(); await outsider_unread.disconnect()
+        async_to_sync(run)()
+        self.assertEqual(unread_chat_count(self.b), 1)
+        self.assertEqual(unread_chat_count(self.a), 0)
+        self.assertEqual(unread_chat_count(self.c), 0)
+
+    def test_unread_reconnect_uses_persistent_read_state_and_room_open_marks_read(self):
+        send_message(sender=self.a, room=self.room, content="persisted unread")
+        first=self._unread_communicator(self.b)
+        async def initial_count():
+            self.assertTrue((await first.connect())[0])
+            self.assertEqual((await first.receive_json_from())["unread_count"], 1)
+            await first.disconnect()
+        async_to_sync(initial_count)()
+        mark_room_read(room=self.room, user=self.b)
+        self.assertTrue(ChatReadState.objects.filter(room=self.room, user=self.b).exists())
+        second=self._unread_communicator(self.b)
+        async def refreshed_count():
+            self.assertTrue((await second.connect())[0])
+            self.assertEqual((await second.receive_json_from())["unread_count"], 0)
+            await second.disconnect()
+        async_to_sync(refreshed_count)()
     def test_direct_block_and_restricted_messages_are_rejected_without_persisting(self):
         first=self._communicator(self.a); second=self._communicator(self.b)
         Block.objects.create(blocker=self.b, blocked=self.a)

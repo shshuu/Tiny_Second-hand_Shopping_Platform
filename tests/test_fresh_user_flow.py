@@ -59,13 +59,15 @@ class UserFacingFlowTests(TestCase):
         self.assertEqual(user.wallet.balance, 0)
         self.assertFalse(WalletTransaction.objects.filter(destination=user.wallet, transaction_type=WalletTransaction.Type.WELCOME).exists())
 
-    def test_invalid_wallet_recipient_is_a_form_error_without_mutation(self):
+    def test_wallet_legacy_get_and_post_cannot_execute_arbitrary_user_transfer(self):
         self.client.force_login(self.buyer)
         self.buyer.wallet.refresh_from_db()
         before = (WalletTransaction.objects.count(), LedgerEntry.objects.count(), self.buyer.wallet.balance)
+        get_response = self.client.get(reverse("wallet"), {"recipient": self.seller.public_id, "amount": 1})
+        self.assertEqual(get_response.status_code, 200)
         response = self.client.post(reverse("wallet"), {"recipient":"not-a-user", "amount":1, "memo":"", "idempotency_key":uuid.uuid4()})
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "송금할 수 없는 수신자입니다.")
+        self.assertNotContains(response, "송금")
         self.buyer.wallet.refresh_from_db()
         self.assertEqual((WalletTransaction.objects.count(), LedgerEntry.objects.count(), self.buyer.wallet.balance), before)
 

@@ -53,6 +53,9 @@ class ChatParticipant(models.Model):
 class ChatMessage(models.Model):
     class Status(models.TextChoices): VISIBLE="VISIBLE"; HIDDEN="HIDDEN"; DELETED="DELETED"
     public_id=models.UUIDField(default=uuid.uuid4,unique=True,editable=False); room=models.ForeignKey(ChatRoom,on_delete=models.CASCADE,related_name="messages"); sender=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT); content=models.CharField(max_length=1000); status=models.CharField(max_length=10,choices=Status.choices,default=Status.VISIBLE); created_at=models.DateTimeField(auto_now_add=True)
+class ChatReadState(models.Model):
+    room=models.ForeignKey(ChatRoom,on_delete=models.CASCADE,related_name="read_states"); user=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.CASCADE,related_name="chat_read_states"); last_read_at=models.DateTimeField(null=True,blank=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=["room","user"],name="unique_chat_read_state")]
 
 class Report(models.Model):
     class Target(models.TextChoices): USER="USER"; PRODUCT="PRODUCT"; MESSAGE="MESSAGE"
@@ -69,9 +72,11 @@ class WalletTransaction(models.Model):
     public_id=models.UUIDField(default=uuid.uuid4,unique=True,editable=False); transaction_type=models.CharField(max_length=20,choices=Type.choices)
     source=models.ForeignKey(Wallet,on_delete=models.PROTECT,null=True,blank=True,related_name="outgoing"); destination=models.ForeignKey(Wallet,on_delete=models.PROTECT,null=True,blank=True,related_name="incoming")
     amount=models.PositiveBigIntegerField(validators=[MinValueValidator(1)]); idempotency_key=models.UUIDField(unique=True); grant_key=models.CharField(max_length=100,null=True,blank=True)
-    memo=models.CharField(max_length=200,blank=True); original_transaction=models.OneToOneField("self",on_delete=models.PROTECT,null=True,blank=True,related_name="reversal"); created_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name="created_wallet_transactions"); created_at=models.DateTimeField(auto_now_add=True)
+    memo=models.CharField(max_length=200,blank=True); product=models.ForeignKey(Product,on_delete=models.PROTECT,null=True,blank=True,related_name="wallet_transactions"); original_transaction=models.OneToOneField("self",on_delete=models.PROTECT,null=True,blank=True,related_name="reversal"); created_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name="created_wallet_transactions"); created_at=models.DateTimeField(auto_now_add=True)
     class Meta:
         constraints=[models.CheckConstraint(condition=Q(amount__gt=0),name="transaction_positive_amount"),models.CheckConstraint(condition=Q(source__isnull=True)|Q(destination__isnull=True)|~Q(source=F("destination")),name="transaction_distinct_wallets"),models.UniqueConstraint(fields=["grant_key"],condition=Q(grant_key__isnull=False),name="unique_non_null_grant_key")]
+class Purchase(models.Model):
+    public_id=models.UUIDField(default=uuid.uuid4,unique=True,editable=False); product=models.OneToOneField(Product,on_delete=models.PROTECT,related_name="purchase"); buyer=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name="purchases"); seller=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name="sales"); amount=models.PositiveBigIntegerField(); transaction=models.OneToOneField("WalletTransaction",on_delete=models.PROTECT,related_name="purchase"); created_at=models.DateTimeField(auto_now_add=True); completed_at=models.DateTimeField(auto_now_add=True)
 
 class LedgerEntry(models.Model):
     transaction=models.ForeignKey(WalletTransaction,on_delete=models.PROTECT,related_name="entries"); wallet=models.ForeignKey(Wallet,on_delete=models.PROTECT); entry_type=models.CharField(max_length=8,choices=[("CREDIT","CREDIT"),("DEBIT","DEBIT")]); amount=models.PositiveBigIntegerField(); balance_before=models.PositiveBigIntegerField(); balance_after=models.PositiveBigIntegerField(); created_at=models.DateTimeField(auto_now_add=True)

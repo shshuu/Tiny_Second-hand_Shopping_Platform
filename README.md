@@ -61,7 +61,7 @@ WELCOME_BONUS_AMOUNT=10000
 4. 다른 브라우저 또는 시크릿 창에서 구매자 계정을 만듭니다.
 5. 구매자가 상품 상세에서 **판매자에게 채팅하기**를 누르고 메시지를 보냅니다.
 6. 판매자와 구매자 모두 상단 **채팅** 메뉴에서 같은 방을 열어 답장합니다. 새로고침해도 저장된 메시지가 보입니다.
-7. 구매자는 **지갑**에서 판매자 username으로 송금합니다. 존재하지 않는 username은 화면 내 입력 오류로 처리되며 거래가 생성되지 않습니다.
+7. 구매자는 ACTIVE 상품 상세 또는 그 상품의 참여자 1:1 채팅방에서 **구매하기**를 선택합니다. 지갑은 잔액과 구매·판매 거래 내역을 확인하는 읽기 전용 사용자 화면이며, 임의 사용자 송금은 제공하지 않습니다.
 
 신규 채팅은 ACTIVE 상품에서만 만들 수 있습니다. SOLD/HIDDEN/DELETED/DRAFT 상품에서는 새 방을 만들 수 없고, 기존 상품 채팅은 거래 후속 협의를 위해 채팅 목록에서 보존됩니다. RESERVED 상품도 신규 방 생성은 허용하지 않습니다.
 
@@ -85,6 +85,12 @@ docker compose exec -T web python manage.py list_admin_users
 ## 미디어 저장소와 권한
 
 상품 이미지는 호스트 bind mount가 아닌 Compose named volume `media_data`에 저장합니다. 시작 스크립트가 `/app/media`와 `/app/staticfiles` 소유권을 `appuser`에게 초기화한 뒤 Django를 비루트 사용자로 실행합니다. 따라서 Ubuntu Docker Engine과 Docker Desktop 모두 fresh clone 후 수동 `chmod 777` 또는 `chown` 없이 업로드할 수 있습니다. `docker compose down` 후에도 이미지는 유지되고, `docker compose down -v`는 PostgreSQL 및 미디어 named volume까지 삭제합니다.
+
+`DEBUG=false` 로컬 시연에서 업로드 이미지를 보여야 한다면 `.env`에 `DJANGO_LOCAL_DEMO_MODE=true`와 `SERVE_MEDIA_LOCALLY=true`를 함께 설정합니다. 이 경로는 로컬 전용이며 운영에서는 반드시 `SERVE_MEDIA_LOCALLY=false`로 두고 Nginx·object storage·CDN 같은 비실행형 미디어 계층을 사용합니다.
+
+## 상품 구매와 채팅 알림
+
+일반 사용자는 지갑에서 임의 사용자에게 포인트를 보낼 수 없습니다. ACTIVE 상품 상세 또는 해당 상품의 1:1 채팅방에서만 구매할 수 있으며, 구매는 상품 가격을 서버에서 다시 읽어 구매자·판매자 지갑, 거래/원장, Purchase 기록, SOLD 상태를 하나의 트랜잭션으로 처리합니다. RESERVED 상품은 상세 조회만 가능하고 구매할 수 없습니다. SOLD 상품은 상세 조회와 기존 참여자 채팅은 유지하지만 신규 채팅·구매는 차단합니다. HIDDEN·DELETED·DRAFT는 비소유자에게 공개하지 않습니다. 채팅 메뉴의 배지는 다른 참여자가 보낸 읽지 않은 메시지 수를 사용자별로 표시하며, 방을 열면 해당 방의 수신 메시지가 읽음 처리됩니다.
 
 ## 시연용 DEBUG=False
 

@@ -1,6 +1,6 @@
 {% extends 'market/base.html' %}
 {% block content %}
-<h1>상품 채팅</h1>{% if room.related_product %}<p><a href="{% url 'product_detail' room.related_product.public_id %}">{{ room.related_product.title }}</a></p>{% endif %}
+<h1>상품 채팅</h1>{% if room.related_product %}<p><a href="{% url 'product_detail' room.related_product.public_id %}">{{ room.related_product.title }}</a></p>{% if user != room.related_product.seller and room.related_product.status == 'ACTIVE' %}<form method="post" action="{% url 'product_purchase' room.related_product.public_id %}" onsubmit="return confirm('상품 가격으로 구매하시겠습니까?')">{% csrf_token %}<button type="submit" class="danger">구매하기 ({{ room.related_product.price }} P)</button></form>{% endif %}{% endif %}
 <div id="chat-messages">{% for message in messages %}<p><strong>{{ message.sender.display_name }}</strong>: {{ message.content }}</p>{% empty %}<p class="muted">메시지가 없습니다.</p>{% endfor %}</div>
 {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">이전 메시지</a>{% endif %}
 <p id="chat-status" class="muted">연결 중…</p>

@@ -9,7 +9,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         users = User.objects.exclude(role=User.Role.USER).order_by("username")
         if not users.exists():
-            self.stdout.write("No operations users.")
+            self.stdout.write("No administrative users found.")
             return
         for user in users:
-            self.stdout.write(f"{user.username}\t{user.role}\t{user.status}\t{user.public_id}")
+            self.stdout.write(f"username={user.username}\tpublic_id={user.public_id}\trole={user.role}\tstatus={user.status}\tis_staff={user.is_staff}\tis_superuser={user.is_superuser}")
