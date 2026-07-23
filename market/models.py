@@ -63,6 +63,24 @@ class Report(models.Model):
     public_id=models.UUIDField(default=uuid.uuid4,unique=True,editable=False); reporter=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name="reports"); target_type=models.CharField(max_length=10,choices=Target.choices); target_id=models.UUIDField(); reason=models.CharField(max_length=30); description=models.CharField(max_length=1000,blank=True); status=models.CharField(max_length=12,choices=Status.choices,default=Status.PENDING); assigned_to=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name="assigned_reports"); assignment_version=models.PositiveIntegerField(default=0); created_at=models.DateTimeField(auto_now_add=True)
     class Meta: constraints=[models.UniqueConstraint(fields=["reporter","target_type","target_id"],name="unique_report_target")]
 
+class AutoModerationCase(models.Model):
+    class Target(models.TextChoices): PRODUCT="PRODUCT"; USER="USER"
+    class Review(models.TextChoices): PENDING="PENDING"; REVIEWING="REVIEWING"; ACCEPTED="ACCEPTED"; REJECTED="REJECTED"
+    public_id=models.UUIDField(default=uuid.uuid4,unique=True,editable=False)
+    target_type=models.CharField(max_length=10,choices=Target.choices)
+    target_id=models.UUIDField()
+    report_count=models.PositiveIntegerField(); threshold=models.PositiveIntegerField()
+    before_status=models.CharField(max_length=12); after_status=models.CharField(max_length=12)
+    review_status=models.CharField(max_length=12,choices=Review.choices,default=Review.PENDING)
+    assigned_to=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name="assigned_auto_cases")
+    assignment_version=models.PositiveIntegerField(default=0)
+    started_at=models.DateTimeField(null=True,blank=True)
+    reviewed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name="reviewed_auto_cases")
+    review_reason=models.CharField(max_length=300,blank=True); created_at=models.DateTimeField(auto_now_add=True); reviewed_at=models.DateTimeField(null=True,blank=True)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=["target_type","target_id"],name="unique_auto_moderation_target")]
+        indexes=[models.Index(fields=["review_status","created_at"],name="market_auto_review_created_idx")]
+
 class Wallet(models.Model):
     public_id=models.UUIDField(default=uuid.uuid4,unique=True,editable=False); user=models.OneToOneField(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name="wallet"); balance=models.PositiveBigIntegerField(default=0)
     class Meta: constraints=[models.CheckConstraint(condition=Q(balance__gte=0),name="wallet_non_negative_balance")]

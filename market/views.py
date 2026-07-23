@@ -15,7 +15,7 @@ from redis.exceptions import RedisError
 from django.shortcuts import get_object_or_404, redirect, render
 from .forms import ChatMessageForm, ProductForm, ProductImageForm, ProfileForm, ReportForm, SafePasswordChangeForm, SignUpForm
 from .models import Block, Category, ChatMessage, ChatRoom, Notification, Product, ProductImage, Report, SecurityEvent, User, WalletTransaction
-from .services import change_product_status, create_report, direct_room, mark_room_read, purchase_product, register_user, send_message, unread_chat_count, unread_chat_summary
+from .services import change_product_status, community_room, create_report, direct_room, mark_room_read, purchase_product, register_user, send_message, unread_chat_count, unread_chat_summary
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def product_list(request):
     q=request.GET.get("q", "").strip()[:100]
     # Drafts are private to their seller; hidden/deleted listings are never public.
     products=Product.objects.filter(status__in=[Product.Status.ACTIVE, Product.Status.RESERVED, Product.Status.SOLD]).select_related("seller", "category").prefetch_related("images")
-    if q: products=products.filter(Q(title__icontains=q)|Q(description__icontains=q)|Q(seller__display_name__icontains=q))
+    if q: products=products.filter(Q(title__icontains=q)|Q(description__icontains=q)|Q(category__name__icontains=q)|Q(seller__display_name__icontains=q))
     if request.GET.get("category", "").isdigit(): products=products.filter(category_id=request.GET["category"])
     if request.GET.get("condition") in {x[0] for x in Product._meta.get_field("condition").choices}: products=products.filter(condition=request.GET["condition"])
     if request.GET.get("status") in {Product.Status.ACTIVE,Product.Status.RESERVED,Product.Status.SOLD}: products=products.filter(status=request.GET["status"])
@@ -223,6 +223,13 @@ def chat_list(request):
     return render(request, "market/chat_list.html", {"rooms": rooms})
 
 @login_required
+def community(request):
+    if request.user.status == User.Status.SUSPENDED or not request.user.is_active: raise Http404
+    room=community_room()
+    page=Paginator(room.messages.filter(status=ChatMessage.Status.VISIBLE).select_related("sender").order_by("-created_at","-id"),50).get_page(request.GET.get("page"))
+    return render(request,"market/community.html",{"room":room,"chat_messages":list(reversed(page.object_list)),"page_obj":page,"can_post":request.user.status == User.Status.ACTIVE})
+
+@login_required
 def chat_room(request, public_id):
     room=get_object_or_404(ChatRoom.objects.prefetch_related("participants", "messages__sender"), public_id=public_id)
     if not room.participants.filter(user=request.user).exists(): raise Http404
@@ -237,6 +244,9 @@ def chat_room(request, public_id):
 
 @login_required
 def submit_report(request, target_type, target_id):
+    # UI links are hidden for restricted accounts, but this protects direct URLs too.
+    if request.user.status != User.Status.ACTIVE or not request.user.is_active:
+        return HttpResponseForbidden("New report submission is unavailable for this account.")
     form=ReportForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         try: create_report(reporter=request.user,target_type=target_type,target_id=target_id,reason=form.cleaned_data["reason"],description=form.cleaned_data["description"]); messages.success(request,"신고가 접수되었습니다."); return redirect("product_list")

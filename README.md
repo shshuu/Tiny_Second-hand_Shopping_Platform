@@ -1,5 +1,24 @@
 # Tiny Second-hand Shopping Platform
 
+## 핵심 정책과 요구사항 추적
+
+| 요구사항 | 구현 위치 |
+|---|---|
+| 회원가입·프로필 | `/signup/`, `/profile/`, `/mypage/` |
+| 상품 등록·검색·관리 | `/products/new/`, `/`, `/store/` |
+| 공용 실시간 채팅 | `/community/`, `/ws/community/` |
+| 상품 기반 1:1 채팅 | `/chats/`, `/ws/chat/<room-id>/` |
+| 신고·운영 검토 | `/reports/...`, `/operations/reports/` |
+| 자동 상품 숨김 | 유효 신고자 3명 임계치 |
+| 자동 사용자 임시 제한 | 유효 신고자 5명 임계치 |
+| 구매 포인트 정산 | `Purchase`, `WalletTransaction`, `LedgerEntry` |
+
+Tiny Market 포인트는 **과제 시연용 내부 포인트**입니다. 실제 원화·전자화폐가 아니며 충전, 출금, 현금 환급을 제공하지 않습니다. 일반 사용자 간 임의 송금은 제공하지 않으며, ACTIVE 상품의 구매가 완료될 때만 구매자 포인트가 차감되고 판매자에게 같은 금액이 지급됩니다. 가입 축하 포인트와 관리자 지급은 로컬 시연용 지급 기능입니다.
+
+전체 권한, 자동 제재, AuditLog, migration, 공용/1:1 채팅 검증 범위는 [최종 요구사항 추적 문서](docs/final-requirements-traceability.md)를 참조하세요.
+
+신고 누적 사용자는 장기 미접속을 뜻하는 휴면 계정이 아니라 **임시 제한(RESTRICTED)** 상태가 됩니다. 로그인과 공개 상품 조회는 가능하지만 등록·구매·신규 채팅·메시지 전송·신규 신고는 할 수 없습니다.
+
 PostgreSQL 16, Redis 7, Django/Daphne 및 상품 기반 1:1 WebSocket 채팅으로 구성한 중고거래 시연 프로젝트입니다. 일반 사용자의 임의 P2P 포인트 송금은 제공하지 않으며, 포인트는 상품 구매에서만 구매자→판매자로 이전됩니다.
 
 ## 빠른 시작: 로컬 데모
@@ -75,7 +94,13 @@ docker compose exec -T web python manage.py list_admin_users
 
 `SUPERADMIN`은 Tiny Market의 `/operations/` 역할입니다. Django의 `is_staff`, `is_superuser`를 자동으로 부여하지 않습니다. `/admin/`은 공식 운영 UI가 아니며, 운영 기능은 `/operations/login/`과 `/operations/`에 있습니다.
 
-운영 화면에서는 대시보드·사용자·상품·신고·거래·감사 로그를 공통 메뉴로 이동할 수 있습니다. 신고는 담당자 배정 후 검토 시작, 승인 또는 기각할 수 있으며, 승인된 상품 신고는 감사 로그를 남기고 상품을 HIDDEN으로 처리합니다.
+운영 화면에서는 대시보드·사용자·상품·신고·**자동 조치**·**공용 채팅**·거래·카테고리·감사 로그를 공통 메뉴로 이동할 수 있습니다. MODERATOR는 신고·자동 조치·메시지 숨김을 검토할 수 있고, ADMIN/SUPERADMIN은 사용자 상태·카테고리·지급 같은 추가 운영 조치를 수행합니다. 자동 조치는 담당자 배정, 사유 없는 검토 시작, 사유가 필요한 승인/기각으로 처리하며 완료 뒤에는 결과 카드만 남습니다.
+
+## 공용 채팅과 자동 제재
+
+- 공용 채팅은 `/community/`(WebSocket: `/ws/community/`)의 로그인 사용자 공용 공간입니다. ACTIVE 계정만 전송할 수 있고 RESTRICTED 계정은 조회만 가능합니다. SUSPENDED·비활성 계정은 접근할 수 없습니다. 메시지는 Redis 제한을 적용하며 Redis 장애에서는 전송을 fail-closed로 거부합니다.
+- 공용 채팅 메시지는 신고할 수 있습니다. 운영자는 공용 채팅 메뉴에서 신고 수·발신자·내용·작성 시각을 확인하고 사유를 적어 숨길 수 있습니다. 숨긴 원문은 일반 사용자에게 다시 노출하지 않습니다.
+- 서로 다른 ACTIVE 신고자 3명이 ACTIVE/RESERVED 상품을 신고하면 임시 HIDDEN, 5명이 ACTIVE 사용자를 신고하면 임시 RESTRICTED가 됩니다. 중복·자기 신고와 제한/비활성 신고자는 집계하지 않습니다. 기각은 자동 조치 상태가 그대로일 때만 기록된 이전 상태로 복구하므로, 이후의 수동 상태 변경을 덮어쓰지 않습니다.
 
 ## 권한과 미디어 확인
 

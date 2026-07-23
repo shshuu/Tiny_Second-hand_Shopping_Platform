@@ -4,14 +4,16 @@
   const update = (value) => {
     const count = Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
     badge.hidden = count === 0;
-    badge.textContent = count > 99 ? "99+" : String(count);
+    badge.textContent = count ? (count > 99 ? "99+" : String(count)) : "";
+    badge.setAttribute("aria-label", count ? `읽지 않은 메시지 ${count}개` : "읽지 않은 메시지 없음");
   };
   const updateRooms = (rooms) => {
     const values = rooms || {};
     document.querySelectorAll("[data-room-unread]").forEach((badge) => {
       const count = Number(values[badge.dataset.roomUnread] || 0);
       badge.hidden = count <= 0;
-      badge.textContent = count > 99 ? "99+" : String(Math.max(0, count));
+      badge.textContent = count > 0 ? (count > 99 ? "99+" : String(count)) : "";
+      badge.setAttribute("aria-label", count > 0 ? `읽지 않은 메시지 ${count}개` : "읽지 않은 메시지 없음");
     });
   };
   const activeRoom = (roomId) => {

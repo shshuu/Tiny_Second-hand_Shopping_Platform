@@ -67,7 +67,10 @@ class UserFacingFlowTests(TestCase):
         self.assertEqual(get_response.status_code, 200)
         response = self.client.post(reverse("wallet"), {"recipient":"not-a-user", "amount":1, "memo":"", "idempotency_key":uuid.uuid4()})
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "송금")
+        # Informational policy text may say that arbitrary transfers are not
+        # offered; the actual recipient/amount transfer controls must not.
+        self.assertNotContains(response, 'name="recipient"')
+        self.assertNotContains(response, 'name="idempotency_key"')
         self.buyer.wallet.refresh_from_db()
         self.assertEqual((WalletTransaction.objects.count(), LedgerEntry.objects.count(), self.buyer.wallet.balance), before)
 

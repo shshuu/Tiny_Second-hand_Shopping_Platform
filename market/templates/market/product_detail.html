@@ -9,6 +9,6 @@
     <section class="danger-zone"><h2>위험 작업</h2><a class="button danger" href="{% url 'product_delete' product.public_id %}">상품 삭제</a></section>
   {% else %}<p class="notice">삭제된 상품입니다. 더 이상 상태 변경이나 삭제 작업을 할 수 없습니다.</p>{% endif %}
 {% elif user.is_authenticated %}
-  <section class="actions">{% if product.status == 'ACTIVE' %}<form method="post" action="{% url 'start_product_chat' product.public_id %}">{% csrf_token %}<button type="submit">판매자에게 채팅하기</button></form><form method="post" action="{% url 'product_purchase' product.public_id %}">{% csrf_token %}<button type="submit" class="danger">구매하기 ({{ product.price }} P)</button></form>{% endif %}<a class="button secondary" href="{% url 'submit_report' 'PRODUCT' product.public_id %}">신고</a></section>
+  <section class="actions">{% if product.status == 'ACTIVE' %}<form method="post" action="{% url 'start_product_chat' product.public_id %}">{% csrf_token %}<button type="submit">판매자에게 채팅하기</button></form><form method="post" action="{% url 'product_purchase' product.public_id %}">{% csrf_token %}<button type="submit" class="danger">구매하기 ({{ product.price }} P)</button></form>{% endif %}{% if user.is_authenticated and user.status == 'ACTIVE' %}<a class="button secondary" href="{% url 'submit_report' 'PRODUCT' product.public_id %}">신고</a>{% elif user.is_authenticated %}<span class="muted">임시 제한 계정은 신규 신고를 제출할 수 없습니다.</span>{% endif %}</section>
 {% endif %}
 {% endblock %}

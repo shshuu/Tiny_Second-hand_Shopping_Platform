@@ -67,3 +67,26 @@ class UnreadConsumer(AsyncWebsocketConsumer):
         from .services import unread_chat_summary
         total, rooms=unread_chat_summary(self.scope["user"])
         return {"type":"unread_update", "unread_count":total, "total_unread":total, "unread_rooms":rooms}
+
+class CommunityConsumer(AsyncWebsocketConsumer):
+    group="community.global"
+    async def connect(self):
+        if not self.scope.get("user",AnonymousUser()).is_authenticated or not await self.allowed(): await self.close(code=4403); return
+        await self.channel_layer.group_add(self.group,self.channel_name); await self.accept()
+    async def disconnect(self,code): await self.channel_layer.group_discard(self.group,self.channel_name)
+    async def receive(self,text_data=None,bytes_data=None):
+        if bytes_data or not text_data or len(text_data)>4096: await self.close(code=4400); return
+        try:
+            message=await self.persist(json.loads(text_data).get("content",""))
+        except Exception:
+            await self.send(text_data=json.dumps({"error":"message_rejected"})); return
+        await self.channel_layer.group_send(self.group,{"type":"community.message","id":str(message.public_id),"content":message.content,"sender":message.sender.display_name,"created_at":message.created_at.isoformat()})
+    async def community_message(self,event): await self.send(text_data=json.dumps(event))
+    @database_sync_to_async
+    def allowed(self):
+        from .models import User
+        return self.scope["user"].status in {User.Status.ACTIVE,User.Status.RESTRICTED}
+    @database_sync_to_async
+    def persist(self,content):
+        from .services import send_community_message
+        return send_community_message(sender=self.scope["user"],content=content)

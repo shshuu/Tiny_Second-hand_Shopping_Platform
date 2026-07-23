@@ -4,7 +4,7 @@
 {% for item in page_obj %}
 <article class="card">
 {% if kind == 'users' %}{{ item.username }} / {{ item.public_id }} / {{ item.role }} / {{ item.status }}
-{% elif kind == 'products' %}{{ item.title }} / {{ item.seller }} / {{ item.status }}
+{% elif kind == 'products' %}<a href="{% url 'ops_product_detail' item.public_id %}">{{ item.title }}</a> / {{ item.seller }} / {{ item.status }}
   <form class="action-row" method="post" action="{% url 'ops_product_action' item.public_id %}">{% csrf_token %}<input name="reason" required placeholder="조치 사유"><button name="status" value="HIDDEN" type="submit">숨김 처리</button><button name="status" value="ACTIVE" type="submit">공개 복구</button><button class="danger" name="status" value="DELETED" type="submit">소프트 삭제</button></form>
 {% elif kind == 'reports' %}
   <h2>{{ item.display_type }} / {% if item.target_url %}<a href="{{ item.target_url }}">{{ item.target_label }}</a>{% else %}{{ item.target_label }}{% endif %}</h2>
@@ -16,6 +16,7 @@
     <form class="action-row" method="post" action="{% url 'ops_report_assign' item.public_id %}">{% csrf_token %}<input type="hidden" name="version" value="{{ item.assignment_version }}"><input name="reason" required placeholder="배정 사유"><select name="assignee">{% for assignee in assignees %}<option value="{{ assignee.public_id }}">{{ assignee.username }} ({{ assignee.role }})</option>{% endfor %}</select><button type="submit">담당자 배정</button></form>
   {% else %}<section class="readonly-result"><strong>처리 결과: {{ item.display_status }}</strong><p>처리자: {{ item.processed_by|default:'시스템' }}</p><p>처리 사유: {{ item.processed_reason }}</p></section>{% endif %}
   {% if item.target_type == 'MESSAGE' %}<form class="action-row" method="post" action="{% url 'ops_reported_chat' item.public_id %}">{% csrf_token %}<input name="reason" required placeholder="조회 사유"><button type="submit">신고 연결 채팅 조회</button></form>{% endif %}
+{% elif kind == 'community_messages' %}<h2>공용 채팅 메시지 · {{ item.sender.username }}</h2><p>{{ item.content }}</p><p class="muted">작성: {{ item.created_at }} · 신고 {{ item.report_count }}건 · 공개 상태: {{ item.status }} · ID: {{ item.public_id }}</p>{% if item.status == 'VISIBLE' %}<form class="action-row" method="post" action="{% url 'ops_message_hide' item.public_id %}">{% csrf_token %}<input name="reason" required placeholder="숨김 사유"><button>메시지 숨김</button></form>{% else %}<section class="readonly-result">숨김 처리된 메시지입니다.</section>{% endif %}
 {% elif kind == 'transactions' %}{{ item.public_id }} / {{ item.transaction_type }} / {{ item.amount }}
 {% else %}
   <h2>{{ item.display_action }}</h2><p>{{ item.actor|default:'시스템' }} · {% if item.target_url %}<a href="{{ item.target_url }}">{{ item.target_label }}</a>{% else %}{{ item.target_label }}{% endif %}</p>{% if item.reason %}<p>사유: {{ item.reason }}</p>{% endif %}<p class="muted">{{ item.created_at }}</p>

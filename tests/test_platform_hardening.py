@@ -27,11 +27,13 @@ class PlatformHardeningTests(TestCase):
         with self.assertRaises(ValidationError): change_product_status(seller=self.b,product=self.product,status=Product.Status.ACTIVE)
         with self.assertRaises(ValidationError): change_product_status(seller=self.a,product=self.product,status=Product.Status.RESERVED)
     def test_reports_target_types_and_auto_actions(self):
+        self.product.status=Product.Status.ACTIVE; self.product.save(update_fields=["status"])
         for reporter in (self.a,self.c,self.d): create_report(reporter=reporter,target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM")
         self.product.refresh_from_db(); self.assertEqual(self.product.status,Product.Status.HIDDEN)
         with self.assertRaises(ValidationError): create_report(reporter=self.b,target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM")
-        for reporter in (self.b,self.c,self.d): create_report(reporter=reporter,target_type=Report.Target.USER,target_id=self.a.public_id,reason="ABUSE")
-        self.a.refresh_from_db(); self.assertEqual(self.a.status,User.Status.RESTRICTED); self.assertTrue(AuditLog.objects.filter(action="report.auto_restrict").exists())
+        extra=register_user(username="extra_reporter",password="very-secure-password",display_name="Extra")
+        for reporter in (self.b,self.c,self.d,extra,register_user(username="extra_reporter_2",password="very-secure-password",display_name="Extra2")): create_report(reporter=reporter,target_type=Report.Target.USER,target_id=self.a.public_id,reason="ABUSE")
+        self.a.refresh_from_db(); self.assertEqual(self.a.status,User.Status.RESTRICTED); self.assertTrue(AuditLog.objects.filter(action="moderation.auto_restrict").exists())
     def test_message_self_report_and_duplicate_are_rejected(self):
         room=direct_room(sender=self.a,recipient=self.b); message=send_message(sender=self.a,room=room,content="hello")
         with self.assertRaises(ValidationError): create_report(reporter=self.a,target_type=Report.Target.MESSAGE,target_id=message.public_id,reason="ABUSE")

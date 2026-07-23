@@ -10,7 +10,7 @@ from django.core.cache import cache
 from django.test import Client, TransactionTestCase, override_settings
 from django.urls import reverse
 
-from market.models import AuditLog, Category, ChatMessage, LedgerEntry, Product, Report, SecurityEvent, User, WalletTransaction
+from market.models import AuditLog, AutoModerationCase, Category, ChatMessage, LedgerEntry, Product, Report, SecurityEvent, User, WalletTransaction
 from market.services import (assign_report, change_user_role, change_user_status, create_report, create_user_by_admin,
     direct_room, grant, moderate_message, moderate_product, register_user, send_message, transfer)
 
@@ -65,6 +65,35 @@ class AdminOperationTests(TransactionTestCase):
         self.admin.status=User.Status.SUSPENDED; self.admin.save()
         with self.assertRaises(ValidationError): assign_report(actor=self.mod,report=assigned,assignee=self.admin,reason="bad",expected_version=1)
         self.assertTrue(AuditLog.objects.filter(action="report.assign",target=str(report.public_id)).exists())
+
+    def test_operations_category_and_product_detail_permissions(self):
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get(reverse("ops_categories")).status_code,403)
+        self.assertEqual(self.client.get(reverse("ops_product_detail",args=[self.product.public_id])).status_code,403)
+        self.client.force_login(self.admin)
+        response=self.client.post(reverse("ops_categories"),{"name":"Games","slug":"games","is_active":"on"})
+        self.assertEqual(response.status_code,200)
+        category=Category.objects.get(slug="games")
+        self.client.post(reverse("ops_categories"),{"id":category.pk,"name":"Video Games","slug":"video-games"})
+        category.refresh_from_db(); self.assertFalse(category.is_active); self.assertEqual(category.name,"Video Games")
+        self.assertEqual(self.client.get(reverse("ops_product_detail",args=[self.product.public_id])).status_code,200)
+        self.assertTrue(AuditLog.objects.filter(action="category.update",target=str(category.pk)).exists())
+
+    def test_auto_case_operations_forms_are_pending_only_and_audit_is_human_readable(self):
+        reporters=[register_user(username=f"case_rep{i}",password="very-secure-password",display_name=f"R{i}") for i in range(3)]
+        for reporter in reporters: create_report(reporter=reporter,target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM")
+        case=AutoModerationCase.objects.get(target_type=AutoModerationCase.Target.PRODUCT)
+        self.client.force_login(self.mod)
+        response=self.client.post(reverse("ops_auto_case_action",args=[case.public_id]),{"action":"start"})
+        self.assertEqual(response.status_code,302); case.refresh_from_db(); self.assertEqual(case.assigned_to,self.mod)
+        response=self.client.post(reverse("ops_auto_case_action",args=[case.public_id]),{"action":"REJECTED","reason":"insufficient evidence"})
+        self.assertEqual(response.status_code,302); case.refresh_from_db(); self.assertEqual(case.review_status,AutoModerationCase.Review.REJECTED)
+        response=self.client.get(reverse("ops_auto_cases"))
+        self.assertContains(response,"처리 결과")
+        self.assertNotContains(response,'name="action"')
+        self.client.force_login(self.admin)
+        response=self.client.get(reverse("ops_audit"))
+        self.assertContains(response,"자동 조치")
 
     def test_report_transition_ui_acceptance_hides_product_and_rejection_keeps_public(self):
         report=Report.objects.create(reporter=self.user,target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM")

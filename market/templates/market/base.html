@@ -13,11 +13,11 @@
   <nav>
     <a href="{% url 'product_list' %}">상품 목록</a>
     {% if user.is_authenticated %}
-      <a href="{% url 'product_create' %}">상품 등록</a><a href="{% url 'my_store' %}">내 스토어</a><a href="{% url 'chat_list' %}">채팅 <span id="unread-badge" class="unread-badge"{% if not unread_chat_count %} hidden{% endif %}>{% if unread_chat_count > 99 %}99+{% elif unread_chat_count %}{{ unread_chat_count }}{% endif %}</span></a><a href="{% url 'wallet' %}">지갑</a><a href="{% url 'my_page' %}">마이페이지</a>
+      <a href="{% url 'product_create' %}">상품 등록</a><a href="{% url 'my_store' %}">내 스토어</a><a href="{% url 'chat_list' %}">채팅 <span id="unread-badge" class="unread-badge"{% if not unread_chat_count %} hidden{% endif %}>{% if unread_chat_count > 99 %}99+{% elif unread_chat_count %}{{ unread_chat_count }}{% endif %}</span></a><a href="{% url 'community' %}">공용 채팅</a><a href="{% url 'wallet' %}">지갑</a><a href="{% url 'my_page' %}">마이페이지</a>
       <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button type="submit" class="secondary">로그아웃</button></form>
     {% else %}<a href="{% url 'login' %}">로그인</a><a href="{% url 'signup' %}">회원가입</a>{% endif %}
   </nav>
-  {% if operations_navigation %}<nav class="ops-nav"><a href="{% url 'ops_dashboard' %}">대시보드</a><a href="{% url 'ops_users' %}">사용자</a><a href="{% url 'ops_products' %}">상품</a><a href="{% url 'ops_reports' %}">신고</a>{% if operations_can_view_transactions %}<a href="{% url 'ops_transactions' %}">거래</a>{% endif %}<a href="{% url 'ops_audit' %}">감사 로그</a></nav>{% endif %}
+  {% if operations_navigation %}<nav class="ops-nav"><a href="{% url 'ops_dashboard' %}">대시보드</a><a href="{% url 'ops_users' %}">사용자</a><a href="{% url 'ops_products' %}">상품</a><a href="{% url 'ops_reports' %}">신고</a><a href="{% url 'ops_auto_cases' %}">자동 조치</a><a href="{% url 'ops_community_messages' %}">공용 채팅</a>{% if operations_can_view_transactions %}<a href="{% url 'ops_transactions' %}">거래</a><a href="{% url 'ops_categories' %}">카테고리</a>{% endif %}<a href="{% url 'ops_audit' %}">감사 로그</a></nav>{% endif %}
   {% for message in messages %}<p class="notice">{{ message }}</p>{% endfor %}
   {% block content %}{% endblock %}
   {% if user.is_authenticated %}<script src="{% static 'market/js/unread_badge.js' %}" defer></script>{% endif %}

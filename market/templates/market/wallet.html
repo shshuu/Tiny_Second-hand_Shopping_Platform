@@ -1,5 +1,5 @@
 {% extends 'market/base.html' %}
 {% block content %}
-<h1>지갑</h1><p><strong>{{ wallet.balance }} P</strong></p><p>포인트는 상품 구매·판매 및 운영자 조정으로만 이동합니다.</p>
+<h1>지갑</h1><p><strong>{{ wallet.balance }} P</strong></p><p>Tiny Market 포인트는 과제 시연용 내부 포인트입니다. 실제 원화 또는 전자화폐가 아니며 충전·출금·현금 환급을 제공하지 않습니다. 포인트는 상품 구매·판매 및 운영자 조정으로만 이동하며, 일반 사용자 간 임의 송금은 제공하지 않습니다.</p>
 <h2>거래 내역</h2>{% for tx in transactions %}<p>{{ tx.created_at }} · {{ tx.transaction_type }} · {% if tx.destination_id == wallet.id %}입금{% else %}출금{% endif %} {{ tx.amount }} P · {% if tx.product %}{{ tx.product.title }}{% else %}{{ tx.memo }}{% endif %}</p>{% empty %}<p>거래 내역이 없습니다.</p>{% endfor %}
 {% endblock %}
