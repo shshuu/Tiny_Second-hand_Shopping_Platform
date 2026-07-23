@@ -1,13 +1,25 @@
-{% extends 'market/base.html' %}{% block content %}<h1>{{ title }}</h1>
-{% for item in page_obj %}<article class="card">
+{% extends 'market/base.html' %}
+{% block content %}
+<h1>{{ title }}</h1>
+{% for item in page_obj %}
+<article class="card">
 {% if kind == 'users' %}{{ item.username }} / {{ item.public_id }} / {{ item.role }} / {{ item.status }}
 {% elif kind == 'products' %}{{ item.title }} / {{ item.seller }} / {{ item.status }}
-  <form method="post" action="{% url 'ops_product_action' item.public_id %}">{% csrf_token %}<input name="reason" required placeholder="조치 사유"><button name="status" value="HIDDEN" type="submit">숨김 처리</button><button name="status" value="ACTIVE" type="submit">공개 복구</button><button class="danger" name="status" value="DELETED" type="submit">소프트 삭제</button></form>
-{% elif kind == 'reports' %}{{ item.public_id }} / {{ item.target_type }} / 대상 {{ item.target_id }} / {{ item.status }} / {{ item.reporter }}
-  <form method="post" action="{% url 'ops_report_action' item.public_id %}">{% csrf_token %}<input name="reason" required placeholder="처리 사유">{% if item.status == 'PENDING' %}<button name="status" value="REVIEWING">검토 시작</button><button name="status" value="REJECTED">기각</button>{% elif item.status == 'REVIEWING' %}<button name="status" value="ACCEPTED">승인{% if item.target_type == 'PRODUCT' %} 및 상품 숨김{% endif %}</button><button name="status" value="REJECTED">기각</button>{% elif item.status == 'ACCEPTED' %}<button name="status" value="RESOLVED">처리 완료</button>{% endif %}</form>
-  {% if item.status == 'PENDING' or item.status == 'REVIEWING' %}<form method="post" action="{% url 'ops_report_assign' item.public_id %}">{% csrf_token %}<input type="hidden" name="version" value="{{ item.assignment_version }}"><input name="reason" required placeholder="배정 사유"><select name="assignee">{% for assignee in assignees %}<option value="{{ assignee.public_id }}">{{ assignee.username }} ({{ assignee.role }})</option>{% endfor %}</select><button type="submit">담당자 배정</button></form>{% endif %}
-  {% if item.target_type == 'MESSAGE' %}<form method="post" action="{% url 'ops_reported_chat' item.public_id %}">{% csrf_token %}<input name="reason" required placeholder="조회 사유"><button type="submit">신고 연결 채팅 조회</button></form>{% endif %}
+  <form class="action-row" method="post" action="{% url 'ops_product_action' item.public_id %}">{% csrf_token %}<input name="reason" required placeholder="조치 사유"><button name="status" value="HIDDEN" type="submit">숨김 처리</button><button name="status" value="ACTIVE" type="submit">공개 복구</button><button class="danger" name="status" value="DELETED" type="submit">소프트 삭제</button></form>
+{% elif kind == 'reports' %}
+  <h2>{{ item.display_type }} / {% if item.target_url %}<a href="{{ item.target_url }}">{{ item.target_label }}</a>{% else %}{{ item.target_label }}{% endif %}</h2>
+  <p>신고자: {{ item.reporter.username }} · 상태: <strong>{{ item.display_status }}</strong> · 담당자: {{ item.assignee_name }}</p>
+  <p>신고 사유: {{ item.reason }}{% if item.description %}<br>상세 설명: {{ item.description }}{% endif %}</p>
+  <p class="muted">접수: {{ item.created_at }}{% if item.processed_at %}<br>처리자: {{ item.processed_by }} · 처리 시각: {{ item.processed_at }}<br>처리 사유: {{ item.processed_reason }}{% endif %}</p>
+  {% if item.status == 'PENDING' or item.status == 'REVIEWING' %}
+    <form class="action-row" method="post" action="{% url 'ops_report_action' item.public_id %}">{% csrf_token %}<input name="reason" required placeholder="처리 사유">{% if item.status == 'PENDING' %}<button name="status" value="REVIEWING">검토 시작</button><button name="status" value="REJECTED">기각</button>{% else %}<button name="status" value="ACCEPTED">승인{% if item.target_type == 'PRODUCT' %} 및 상품 숨김{% endif %}</button><button name="status" value="REJECTED">기각</button>{% endif %}</form>
+    <form class="action-row" method="post" action="{% url 'ops_report_assign' item.public_id %}">{% csrf_token %}<input type="hidden" name="version" value="{{ item.assignment_version }}"><input name="reason" required placeholder="배정 사유"><select name="assignee">{% for assignee in assignees %}<option value="{{ assignee.public_id }}">{{ assignee.username }} ({{ assignee.role }})</option>{% endfor %}</select><button type="submit">담당자 배정</button></form>
+  {% else %}<section class="readonly-result"><strong>처리 결과: {{ item.display_status }}</strong><p>처리자: {{ item.processed_by|default:'시스템' }}</p><p>처리 사유: {{ item.processed_reason }}</p></section>{% endif %}
+  {% if item.target_type == 'MESSAGE' %}<form class="action-row" method="post" action="{% url 'ops_reported_chat' item.public_id %}">{% csrf_token %}<input name="reason" required placeholder="조회 사유"><button type="submit">신고 연결 채팅 조회</button></form>{% endif %}
 {% elif kind == 'transactions' %}{{ item.public_id }} / {{ item.transaction_type }} / {{ item.amount }}
-{% else %}{{ item.created_at }} / {{ item.actor }} / {{ item.action }} / {{ item.target }}{% endif %}
+{% else %}
+  <h2>{{ item.display_action }}</h2><p>{{ item.actor|default:'시스템' }} · {% if item.target_url %}<a href="{{ item.target_url }}">{{ item.target_label }}</a>{% else %}{{ item.target_label }}{% endif %}</p>{% if item.reason %}<p>사유: {{ item.reason }}</p>{% endif %}<p class="muted">{{ item.created_at }}</p>
+{% endif %}
 </article>{% empty %}<p>No records.</p>{% endfor %}
-{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %} {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}{% endblock %}
+{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %} {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+{% endblock %}

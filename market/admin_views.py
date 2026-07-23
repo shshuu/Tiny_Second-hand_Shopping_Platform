@@ -12,6 +12,7 @@ from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
 from .models import AuditLog, ChatMessage, ChatRoom, Product, Report, SecurityEvent, User, WalletTransaction
 from .services import (assign_report, change_user_role, change_user_status, create_user_by_admin, grant,
@@ -35,6 +36,50 @@ def ops_required(roles):
 
 def _page(request, queryset, size=30):
     return Paginator(queryset, size).get_page(request.GET.get("page"))
+
+
+_REPORT_TYPES={"USER":"사용자 신고", "PRODUCT":"상품 신고", "MESSAGE":"채팅 메시지 신고"}
+_REPORT_STATES={"PENDING":"접수", "REVIEWING":"검토 중", "ACCEPTED":"승인", "REJECTED":"기각", "RESOLVED":"처리 완료"}
+_AUDIT_LABELS={"report.transition":"신고 상태 변경", "report.assign":"담당자 배정", "report.accept_hide_product":"상품 숨김 처리", "product.hide":"상품 숨김 처리", "product.restore":"상품 공개 복구"}
+
+
+def _decorate_reports(reports):
+    product_ids=[report.target_id for report in reports if report.target_type == Report.Target.PRODUCT]
+    message_ids=[report.target_id for report in reports if report.target_type == Report.Target.MESSAGE]
+    products={str(obj.public_id):obj for obj in Product.objects.filter(public_id__in=product_ids)}
+    chat_messages={str(obj.public_id):obj for obj in ChatMessage.objects.select_related("sender","room__related_product").filter(public_id__in=message_ids)}
+    for report in reports:
+        report.display_type=_REPORT_TYPES[report.target_type]; report.display_status=_REPORT_STATES[report.status]
+        report.assignee_name=report.assigned_to.username if report.assigned_to else "미배정"
+        report.target_label="삭제되었거나 확인할 수 없는 대상"
+        report.target_url=""
+        if report.target_type == Report.Target.PRODUCT:
+            product=products.get(str(report.target_id))
+            if product: report.target_label=product.title; report.target_url=reverse("ops_products")+"?q="+str(product.public_id)
+        elif report.target_type == Report.Target.USER:
+            user=User.objects.filter(public_id=report.target_id).first()
+            if user: report.target_label=user.username; report.target_url=reverse("ops_users")+"?q="+str(user.public_id)
+        else:
+            message=chat_messages.get(str(report.target_id))
+            if message:
+                product=message.room.related_product
+                report.target_label=f"{product.title if product else '상품 없음'} / {message.sender.username}: {message.content[:80]}"
+        latest=AuditLog.objects.filter(target=str(report.public_id),action="report.transition").select_related("actor").order_by("-created_at").first()
+        report.processed_by=latest.actor.username if latest and latest.actor else ""
+        report.processed_at=latest.created_at if latest else None
+        report.processed_reason=latest.reason if latest else ""
+    return reports
+
+
+def _decorate_audit_logs(logs):
+    product_ids=[entry.target for entry in logs if entry.action in {"product.hide","product.restore","report.accept_hide_product"}]
+    products={str(obj.public_id):obj for obj in Product.objects.filter(public_id__in=product_ids)}
+    for entry in logs:
+        entry.display_action=_AUDIT_LABELS.get(entry.action, entry.action.replace("_", " ").replace(".", " · "))
+        product=products.get(entry.target)
+        entry.target_label=product.title if product else entry.target
+        entry.target_url=(reverse("ops_products")+"?q="+entry.target) if product else ""
+    return logs
 
 
 def _ip(request): return request.META.get("REMOTE_ADDR", "unknown")[:64]
@@ -139,11 +184,12 @@ def product_action(request, public_id):
 
 @ops_required({User.Role.MODERATOR, User.Role.ADMIN, User.Role.SUPERADMIN})
 def reports(request):
-    qs=Report.objects.select_related("reporter").order_by("-created_at")
+    qs=Report.objects.select_related("reporter","assigned_to").order_by("-created_at")
     if request.GET.get("status") in Report.Status.values: qs=qs.filter(status=request.GET["status"])
     if request.GET.get("target_type") in Report.Target.values: qs=qs.filter(target_type=request.GET["target_type"])
     assignees=User.objects.filter(role__in=[User.Role.MODERATOR,User.Role.ADMIN,User.Role.SUPERADMIN],status=User.Status.ACTIVE).order_by("username")
-    return render(request,"market/ops_list.html",{"title":"Reports","page_obj":_page(request,qs),"kind":"reports","assignees":assignees})
+    page_obj=_page(request,qs); _decorate_reports(list(page_obj.object_list))
+    return render(request,"market/ops_list.html",{"title":"Reports","page_obj":page_obj,"kind":"reports","assignees":assignees})
 
 
 @ops_required({User.Role.MODERATOR, User.Role.ADMIN, User.Role.SUPERADMIN})
@@ -162,6 +208,7 @@ def assign_report_view(request, public_id):
     assignee=get_object_or_404(User,public_id=request.POST.get("assignee"))
     try: assign_report(actor=request.user,report=report,assignee=assignee,reason=request.POST.get("reason", ""),expected_version=int(request.POST.get("version", "-1")))
     except (ValidationError, ValueError) as exc: messages.error(request,str(exc))
+    else: messages.success(request,"Report assignee updated.")
     return redirect("ops_reports")
 
 
@@ -219,4 +266,5 @@ def reported_direct_chat(request, report_id):
 
 @ops_required({User.Role.ADMIN, User.Role.SUPERADMIN})
 def audit_logs(request):
-    return render(request,"market/ops_list.html",{"title":"Audit logs","page_obj":_page(request,AuditLog.objects.select_related("actor").order_by("-created_at")),"kind":"audit"})
+    page_obj=_page(request,AuditLog.objects.select_related("actor").order_by("-created_at")); _decorate_audit_logs(list(page_obj.object_list))
+    return render(request,"market/ops_list.html",{"title":"Audit logs","page_obj":page_obj,"kind":"audit"})

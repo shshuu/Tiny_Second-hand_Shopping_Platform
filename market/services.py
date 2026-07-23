@@ -6,7 +6,7 @@ from django.contrib.auth import authenticate
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import DateTimeField, F, OuterRef, Q, Subquery, Sum
+from django.db.models import Count, DateTimeField, F, OuterRef, Q, Subquery, Sum
 from django.utils import timezone
 from redis.exceptions import RedisError
 from .models import AuditLog, ChatMessage, ChatParticipant, ChatReadState, ChatRoom, LedgerEntry, Notification, Product, Profile, Purchase, Report, SecurityEvent, User, Wallet, WalletTransaction
@@ -183,26 +183,26 @@ def purchase_product(*, buyer, product_id):
     _notify(product.seller,"PRODUCT_SOLD","Product sold",f"{product.title} was purchased.")
     return purchase
 
-def unread_chat_count(user):
+def unread_chat_summary(user):
     last_read = ChatReadState.objects.filter(room_id=OuterRef("room_id"), user_id=user.pk).values("last_read_at")[:1]
-    return (
+    rows = list(
         ChatMessage.objects.filter(room__participants__user=user, status=ChatMessage.Status.VISIBLE)
         .exclude(sender=user)
         .annotate(_last_read_at=Subquery(last_read, output_field=DateTimeField()))
         .filter(Q(_last_read_at__isnull=True) | Q(created_at__gt=F("_last_read_at")))
-        .distinct()
-        .count()
+        .values("room_id")
+        .annotate(total=Count("id"))
     )
+    room_ids=[row["room_id"] for row in rows]
+    public_ids=dict(ChatRoom.objects.filter(pk__in=room_ids).values_list("pk", "public_id"))
+    unread_rooms={str(public_ids[row["room_id"]]): row["total"] for row in rows if row["room_id"] in public_ids}
+    return sum(unread_rooms.values()), unread_rooms
+
+def unread_chat_count(user):
+    return unread_chat_summary(user)[0]
 
 def unread_chat_count_for_room(*, room, user):
-    last_read = ChatReadState.objects.filter(room_id=room.pk, user_id=user.pk).values("last_read_at")[:1]
-    return (
-        ChatMessage.objects.filter(room=room, status=ChatMessage.Status.VISIBLE)
-        .exclude(sender=user)
-        .annotate(_last_read_at=Subquery(last_read, output_field=DateTimeField()))
-        .filter(Q(_last_read_at__isnull=True) | Q(created_at__gt=F("_last_read_at")))
-        .count()
-    )
+    return unread_chat_summary(user)[1].get(str(room.public_id), 0)
 
 @transaction.atomic
 def mark_room_read(*, room, user):

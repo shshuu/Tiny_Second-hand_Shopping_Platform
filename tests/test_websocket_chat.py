@@ -9,7 +9,7 @@ from django.test import override_settings
 from config.asgi import application
 from market.consumers import ChatConsumer
 from market.models import Block, Category, ChatMessage, ChatReadState, Product, User
-from market.services import direct_room, mark_room_read, register_user, send_message, unread_chat_count
+from market.services import direct_room, mark_room_read, register_user, send_message, unread_chat_count, unread_chat_summary
 
 class WebSocketChatTests(TransactionTestCase):
     def setUp(self):
@@ -87,6 +87,23 @@ class WebSocketChatTests(TransactionTestCase):
             self.assertEqual((await second.receive_json_from())["unread_count"], 0)
             await second.disconnect()
         async_to_sync(refreshed_count)()
+
+    def test_active_room_mark_read_action_clears_only_that_rooms_unread(self):
+        other_product=Product.objects.create(seller=self.b,category=self.category,title="Other",description="x",price=10,condition="USED",status=Product.Status.ACTIVE)
+        other=direct_room(sender=self.a,recipient=self.b,product=other_product)
+        send_message(sender=self.b,room=self.room,content="active room")
+        send_message(sender=self.b,room=other,content="background room")
+        active=self._communicator(self.a)
+        async def run():
+            self.assertTrue((await active.connect())[0])
+            await active.send_to(text_data=json.dumps({"action":"mark_read"}))
+            await asyncio.sleep(.1)
+            await active.disconnect()
+        async_to_sync(run)()
+        total, rooms=unread_chat_summary(self.a)
+        self.assertEqual(total,1)
+        self.assertNotIn(str(self.room.public_id),rooms)
+        self.assertEqual(rooms[str(other.public_id)],1)
     def test_direct_block_and_restricted_messages_are_rejected_without_persisting(self):
         first=self._communicator(self.a); second=self._communicator(self.b)
         Block.objects.create(blocker=self.b, blocked=self.a)

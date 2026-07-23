@@ -81,6 +81,17 @@ class AdminOperationTests(TransactionTestCase):
         self.assertEqual(self.client.post(reverse("ops_report_action",args=[rejected.public_id]),{"status":"REJECTED","reason":"not a violation"}).status_code,302)
         rejected_product.refresh_from_db(); self.assertEqual(rejected_product.status,Product.Status.ACTIVE)
 
+    def test_report_and_audit_lists_render_human_readable_details_and_closed_reports_are_readonly(self):
+        report=Report.objects.create(reporter=self.user,target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM",description="misleading listing")
+        self.client.force_login(self.mod)
+        response=self.client.get(reverse("ops_reports"))
+        self.assertContains(response,"상품 신고"); self.assertContains(response,self.product.title); self.assertContains(response,"misleading listing")
+        self.client.post(reverse("ops_report_action",args=[report.public_id]),{"status":"REJECTED","reason":"insufficient evidence"})
+        response=self.client.get(reverse("ops_reports"))
+        self.assertContains(response,"처리 결과: 기각"); self.assertNotContains(response,'name="status"')
+        response=self.client.get(reverse("ops_audit"))
+        self.assertContains(response,"신고 상태 변경")
+
     @override_settings(ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE=2)
     def test_admin_login_rate_limit_is_hashed_and_fail_closed_policy(self):
         from market.admin_views import _login_key

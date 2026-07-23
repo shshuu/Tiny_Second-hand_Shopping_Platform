@@ -6,10 +6,14 @@
   const input = form.querySelector("[name=content]");
   let socket;
   let retryTimer;
+  let readTimer;
+  const isActivelyViewing = () => document.visibilityState === "visible" && document.hasFocus() && socket && socket.readyState === WebSocket.OPEN;
+  const markRead = () => { if (isActivelyViewing()) socket.send(JSON.stringify({action: "mark_read"})); };
   const connect = () => {
     socket = new WebSocket(list.dataset.chatSocket);
-    socket.onopen = () => { status.textContent = "실시간 연결됨"; };
+    socket.onopen = () => { window.tinyChatSocketOpen = true; markRead(); status.textContent = "실시간 연결됨"; };
     socket.onclose = () => {
+      window.tinyChatSocketOpen = false;
       status.textContent = "연결이 끊겼습니다. 잠시 후 다시 연결합니다.";
       retryTimer = window.setTimeout(connect, 2000);
     };
@@ -23,6 +27,7 @@
       name.textContent = data.sender;
       line.append(name, `: ${data.content}`);
       list.append(line);
+      markRead();
     };
   };
   form.addEventListener("submit", (event) => {
@@ -32,6 +37,10 @@
       input.value = "";
     }
   });
-  window.addEventListener("beforeunload", () => window.clearTimeout(retryTimer));
+  window.addEventListener("tiny-chat-mark-read", markRead);
+  window.addEventListener("focus", markRead);
+  document.addEventListener("visibilitychange", markRead);
+  readTimer = window.setInterval(markRead, 30000);
+  window.addEventListener("beforeunload", () => { window.clearTimeout(retryTimer); window.clearInterval(readTimer); });
   connect();
 })();

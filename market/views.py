@@ -15,7 +15,7 @@ from redis.exceptions import RedisError
 from django.shortcuts import get_object_or_404, redirect, render
 from .forms import ChatMessageForm, ProductForm, ProductImageForm, ProfileForm, ReportForm, SafePasswordChangeForm, SignUpForm
 from .models import Block, Category, ChatMessage, ChatRoom, Notification, Product, ProductImage, Report, SecurityEvent, User, WalletTransaction
-from .services import change_product_status, create_report, direct_room, mark_room_read, purchase_product, register_user, send_message, unread_chat_count, unread_chat_count_for_room
+from .services import change_product_status, create_report, direct_room, mark_room_read, purchase_product, register_user, send_message, unread_chat_count, unread_chat_summary
 
 logger = logging.getLogger(__name__)
 
@@ -215,10 +215,11 @@ def chat_list(request):
         .order_by("-last_message_at", "-created_at")
         .distinct()
     )
+    _total_unread, unread_rooms=unread_chat_summary(request.user)
     for room in rooms:
         room.counterparty = next((participant.user for participant in room.participants.all() if participant.user_id != request.user.pk), None)
         room.viewer_role = "판매자" if room.related_product and room.related_product.seller_id == request.user.pk else "구매자"
-        room.unread_count = unread_chat_count_for_room(room=room, user=request.user)
+        room.unread_count = unread_rooms.get(str(room.public_id), 0)
     return render(request, "market/chat_list.html", {"rooms": rooms})
 
 @login_required

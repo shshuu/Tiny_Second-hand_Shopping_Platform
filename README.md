@@ -19,10 +19,19 @@ docker compose logs -f web
 
 web 컨테이너는 시작 시 committed migration을 자동 적용합니다. fresh DB에서 `up` 직후 별도로 `manage.py migrate`를 동시에 실행하지 마세요. 운영의 여러 web replica에서는 자동 migration 대신 단일 migration job을 사용해야 합니다.
 
-로그 확인 후 기본 카테고리와 검사를 준비합니다.
+## 기본 카테고리 생성
+
+아래 명령은 **테스트가 아니라 실제 서비스 PostgreSQL DB**에 기본 카테고리 6개를 생성합니다. 실행하지 않으면 상품 등록 화면에 카테고리가 나타나지 않습니다.
 
 ```bash
 docker compose exec -T web python manage.py seed_categories
+```
+
+첫 실행은 `0 existing, 6 created`, 재실행은 `6 existing, 0 created`를 출력합니다. 이 명령은 멱등적이므로 중복 카테고리를 만들지 않습니다.
+
+## Django 검사
+
+```bash
 docker compose exec -T web python manage.py check
 docker compose exec -T web python manage.py makemigrations --check
 docker compose exec -T web python manage.py migrate --check
