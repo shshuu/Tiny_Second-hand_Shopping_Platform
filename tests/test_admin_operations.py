@@ -89,7 +89,11 @@ class AdminOperationTests(TransactionTestCase):
         self.client.post(reverse("ops_report_action",args=[report.public_id]),{"status":"REJECTED","reason":"insufficient evidence"})
         response=self.client.get(reverse("ops_reports"))
         self.assertContains(response,"처리 결과: 기각"); self.assertNotContains(response,'name="status"')
+        # 신고 처리는 MODERATOR에게 허용되지만 감사 로그 열람은 ADMIN 이상 전용이다.
+        self.assertEqual(self.client.get(reverse("ops_audit")).status_code,403)
+        self.client.force_login(self.admin)
         response=self.client.get(reverse("ops_audit"))
+        self.assertEqual(response.status_code,200)
         self.assertContains(response,"신고 상태 변경")
 
     @override_settings(ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE=2)
