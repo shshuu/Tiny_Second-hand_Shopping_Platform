@@ -25,6 +25,10 @@ services:
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
-    volumes: ["./media:/app/media"]
+    # A named volume avoids host bind-mount ownership mismatches on both
+    # Docker Desktop and Linux Docker Engine.  The entrypoint initializes its
+    # ownership for the non-root application account.
+    volumes: ["media_data:/app/media"]
 volumes:
   postgres_data:
+  media_data:

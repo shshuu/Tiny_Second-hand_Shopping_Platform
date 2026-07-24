@@ -13,7 +13,9 @@ The Compose runtime consists of Django/Daphne (`web`), PostgreSQL 16 (`db`), and
 ```bash
 cp .env.example .env
 docker compose up -d --build
-docker compose exec -T web python manage.py migrate
+docker compose ps
+docker compose logs -f web
+docker compose exec -T web python manage.py seed_categories
 docker compose exec -T web python manage.py check
 docker compose exec -T web python manage.py makemigrations --check
 docker compose exec -T web python manage.py migrate --check
@@ -27,13 +29,15 @@ Copy-Item .env.example .env
 
 For a clean local database, run `docker compose down -v` before starting.
 
+The web container applies committed migrations automatically. Wait for its log to show no migration error and Daphne `Listening on TCP address`; do not concurrently run a second `manage.py migrate` on a fresh database. `Ctrl+C` stops log follow only.
+
 ## Full test command
 
 ```bash
 docker compose exec -T web python manage.py test tests --noinput
 ```
 
-Expected result: `Ran 77 tests ... OK` on PostgreSQL and Redis. Afterward, confirm the test DB is removed and no `admin-login:*` or `public-rate:*` test key remains in Redis. See the preserved [authentication rate-limit follow-up](followup-auth-rate-limit-verification.md) for the two High findings and their corrective verification.
+Run `docker compose exec -T web python manage.py seed_categories` after web startup and before browser verification. Expected current result: `Ran 105 tests ... OK` on PostgreSQL and Redis. The suite isolates fixture balances from `WELCOME_BONUS_ENABLED`, so it must pass with the local-demo value both true and false. Afterward, confirm the test DB is removed and no `admin-login:*` or `public-rate:*` test key remains in Redis. See [fresh-clone usability follow-up](followup-fresh-clone-usability-verification.md) for the later user-flow corrections and evidence boundary.
 
 ## Main URLs
 
@@ -44,15 +48,15 @@ Expected result: `Ran 77 tests ... OK` on PostgreSQL and Redis. Afterward, confi
 | Wallet | `/wallet/` |
 | Operations login | `/operations/login/` |
 | Operations dashboard | `/operations/` |
-| WebSocket room | `/ws/chat/<chat-room-public-id>/` |
+| Product chat list | `/chats/` |
 
 ## Suggested verification flows
 
 ### General user
 
 1. Create two users and log in.
-2. Register a product; verify list/search/detail and allowed sales-state changes.
-3. Create a DIRECT room and exchange messages as both participants.
+2. Run `seed_categories`, register a product, and change it to ACTIVE.
+3. As a second user, select **판매자에게 채팅하기** on product detail. Verify the same room is listed for both users under **채팅**, then exchange messages.
 4. Block one participant and confirm chat transmission and transfer refusal.
 5. Submit user, product, and message reports; compare stored target type/public ID.
 6. Confirm `/wallet/` exposes only the signed-in user's transactions.

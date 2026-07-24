@@ -6,10 +6,10 @@ from django.contrib.auth import authenticate
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
+from django.db.models import Count, DateTimeField, F, OuterRef, Q, Subquery, Sum
 from django.utils import timezone
 from redis.exceptions import RedisError
-from .models import AuditLog, ChatMessage, ChatParticipant, ChatRoom, LedgerEntry, Notification, Product, Profile, Report, SecurityEvent, User, Wallet, WalletTransaction
+from .models import AuditLog, AutoModerationCase, ChatMessage, ChatParticipant, ChatReadState, ChatRoom, LedgerEntry, Notification, Product, Profile, Purchase, Report, SecurityEvent, User, Wallet, WalletTransaction
 
 logger = logging.getLogger(__name__)
 
@@ -135,14 +135,19 @@ def verify_wallet(wallet):
 @transaction.atomic
 def direct_room(*,sender,recipient,product=None):
     if sender == recipient or _blocked(sender,recipient) or not sender.can_transfer() or not recipient.can_transfer(): raise ValidationError("채팅을 시작할 수 없습니다.")
+    # Public room creation always supplies a product.  Keeping product-less
+    # direct rooms readable preserves historic moderator evidence, but no
+    # public URL can create one.
+    if product is not None and (product.seller_id != recipient.pk or product.status != Product.Status.ACTIVE):
+        raise ValidationError("현재 이 상품으로 새 채팅을 시작할 수 없습니다.")
     for room in ChatRoom.objects.filter(room_type=ChatRoom.Type.DIRECT,related_product=product).prefetch_related("participants"):
         if {p.user_id for p in room.participants.all()} == {sender.pk,recipient.pk}: return room
-    room=ChatRoom.objects.create(room_type=ChatRoom.Type.DIRECT,related_product=product); ChatParticipant.objects.bulk_create([ChatParticipant(room=room,user=sender),ChatParticipant(room=room,user=recipient)]); return room
-
-@transaction.atomic
-def global_room():
-    room=ChatRoom.objects.filter(room_type=ChatRoom.Type.GLOBAL).first()
-    return room or ChatRoom.objects.create(room_type=ChatRoom.Type.GLOBAL)
+    room=ChatRoom.objects.create(room_type=ChatRoom.Type.DIRECT,related_product=product)
+    ChatParticipant.objects.bulk_create([ChatParticipant(room=room,user=sender),ChatParticipant(room=room,user=recipient)])
+    # A null marker means "never read". Existing rooms without a row are
+    # handled the same way by unread_chat_count().
+    ChatReadState.objects.bulk_create([ChatReadState(room=room,user=sender),ChatReadState(room=room,user=recipient)])
+    return room
 
 @transaction.atomic
 def change_product_status(*, seller, product, status):
@@ -151,39 +156,202 @@ def change_product_status(*, seller, product, status):
     if product.seller_id != seller.pk or status not in allowed.get(product.status,set()): raise ValidationError("허용되지 않은 판매 상태 전이입니다.")
     product.status=status; product.save(update_fields=["status","updated_at"]); AuditLog.objects.create(actor=seller,action="product.status",target=str(product.public_id),reason=status); return product
 def send_message(*,sender,room,content):
-    if not sender.can_transfer() or (room.room_type == ChatRoom.Type.DIRECT and not room.participants.filter(user=sender).exists()): raise ValidationError("채팅 권한이 없습니다.")
-    if room.room_type == ChatRoom.Type.DIRECT:
-        other=room.participants.exclude(user=sender).select_related("user").first()
-        if not other or _blocked(sender,other.user): raise ValidationError("차단 관계에서는 메시지를 전송할 수 없습니다.")
+    if room.room_type != ChatRoom.Type.DIRECT or not sender.can_transfer() or not room.participants.filter(user=sender).exists(): raise ValidationError("채팅 권한이 없습니다.")
+    other=room.participants.exclude(user=sender).select_related("user").first()
+    if not other or _blocked(sender,other.user): raise ValidationError("차단 관계에서는 메시지를 전송할 수 없습니다.")
     content=content.strip()
     if not content or len(content)>1000: raise ValidationError("메시지 길이가 올바르지 않습니다.")
     _rate_limit(sender,"chat",settings.CHAT_RATE_LIMIT_PER_MINUTE)
-    return ChatMessage.objects.create(room=room,sender=sender,content=content)
+    message=ChatMessage.objects.create(room=room,sender=sender,content=content)
+    return message
+
+def community_room():
+    room, _ = ChatRoom.objects.get_or_create(room_type=ChatRoom.Type.GLOBAL, related_product=None)
+    return room
+
+def send_community_message(*, sender, content):
+    if sender.status != User.Status.ACTIVE: raise ValidationError("Community posting is not permitted.")
+    content=content.strip()
+    if not content or len(content)>1000: raise ValidationError("Invalid message length.")
+    _rate_limit(sender,"community",settings.CHAT_RATE_LIMIT_PER_MINUTE)
+    return ChatMessage.objects.create(room=community_room(),sender=sender,content=content)
+
+@transaction.atomic
+def purchase_product(*, buyer, product_id):
+    if not buyer.can_transfer(): raise ValidationError("Restricted accounts cannot purchase products.")
+    product=Product.objects.select_for_update().select_related("seller").get(pk=product_id)
+    if product.status != Product.Status.ACTIVE or product.seller_id == buyer.pk:
+        raise ValidationError("This product is not available for purchase.")
+    wallets=_lock_wallets(buyer.wallet.pk, product.seller.wallet.pk)
+    source,destination=wallets[buyer.wallet.pk],wallets[product.seller.wallet.pk]
+    if source.balance < product.price: raise ValidationError("Insufficient point balance.")
+    if Purchase.objects.filter(product=product).exists(): raise ValidationError("This product has already been purchased.")
+    tx=WalletTransaction.objects.create(transaction_type=WalletTransaction.Type.TRANSFER,source=source,destination=destination,amount=product.price,idempotency_key=uuid.uuid4(),memo=f"Product purchase: {product.title}",product=product,created_by=buyer)
+    _entry(tx,source,"DEBIT",tx.amount); _entry(tx,destination,"CREDIT",tx.amount)
+    source.save(update_fields=["balance"]); destination.save(update_fields=["balance"])
+    product.status=Product.Status.SOLD; product.save(update_fields=["status","updated_at"])
+    purchase=Purchase.objects.create(product=product,buyer=buyer,seller=product.seller,amount=tx.amount,transaction=tx)
+    AuditLog.objects.create(actor=buyer,action="product.purchase",target=str(product.public_id),reason=str(purchase.public_id))
+    _notify(product.seller,"PRODUCT_SOLD","Product sold",f"{product.title} was purchased.")
+    return purchase
+
+def unread_chat_summary(user):
+    last_read = ChatReadState.objects.filter(room_id=OuterRef("room_id"), user_id=user.pk).values("last_read_at")[:1]
+    rows = list(
+        ChatMessage.objects.filter(room__participants__user=user, status=ChatMessage.Status.VISIBLE)
+        .exclude(sender=user)
+        .annotate(_last_read_at=Subquery(last_read, output_field=DateTimeField()))
+        .filter(Q(_last_read_at__isnull=True) | Q(created_at__gt=F("_last_read_at")))
+        .values("room_id")
+        .annotate(total=Count("id"))
+    )
+    room_ids=[row["room_id"] for row in rows]
+    public_ids=dict(ChatRoom.objects.filter(pk__in=room_ids).values_list("pk", "public_id"))
+    unread_rooms={str(public_ids[row["room_id"]]): row["total"] for row in rows if row["room_id"] in public_ids}
+    return sum(unread_rooms.values()), unread_rooms
+
+def unread_chat_count(user):
+    return unread_chat_summary(user)[0]
+
+def unread_chat_count_for_room(*, room, user):
+    return unread_chat_summary(user)[1].get(str(room.public_id), 0)
+
+@transaction.atomic
+def mark_room_read(*, room, user):
+    if not room.participants.filter(user=user).exists(): raise ValidationError("Chat permission is required.")
+    ChatReadState.objects.update_or_create(room=room,user=user,defaults={"last_read_at":timezone.now()})
+def _valid_reporter_count(target_type,target_id):
+    return Report.objects.filter(target_type=target_type,target_id=target_id,reporter__status=User.Status.ACTIVE,reporter__is_active=True).exclude(status=Report.Status.REJECTED).values("reporter_id").distinct().count()
+
+def _reported_user(target_type, target):
+    if target_type == Report.Target.USER: return target
+    if target_type == Report.Target.PRODUCT: return target.seller
+    return target.sender
+
+def _user_reporter_ids(user):
+    """Distinct valid reporters across direct, owned-product, and authored-message reports."""
+    reporters=set()
+    reports=Report.objects.select_related("reporter").exclude(status=Report.Status.REJECTED)
+    for report in reports:
+        if report.reporter.status != User.Status.ACTIVE or not report.reporter.is_active: continue
+        owner=None
+        if report.target_type == Report.Target.USER:
+            owner=User.objects.filter(public_id=report.target_id).only("pk").first()
+        elif report.target_type == Report.Target.PRODUCT:
+            owner=Product.objects.filter(public_id=report.target_id).values_list("seller_id",flat=True).first()
+        elif report.target_type == Report.Target.MESSAGE:
+            owner=ChatMessage.objects.filter(public_id=report.target_id).values_list("sender_id",flat=True).first()
+        owner_id=owner.pk if isinstance(owner,User) else owner
+        if owner_id == user.pk: reporters.add(report.reporter_id)
+    return reporters
+
+def _consume_case_reports(case):
+    """Rejected automatic cases begin a new reporting cycle."""
+    if case.target_type == AutoModerationCase.Target.PRODUCT:
+        Report.objects.filter(target_type=Report.Target.PRODUCT,target_id=case.target_id,status__in=[Report.Status.PENDING,Report.Status.REVIEWING]).update(status=Report.Status.REJECTED)
+        return
+    user=User.objects.filter(public_id=case.target_id).first()
+    if not user: return
+    for report in Report.objects.filter(status__in=[Report.Status.PENDING,Report.Status.REVIEWING]):
+        target={Report.Target.USER:User,Report.Target.PRODUCT:Product,Report.Target.MESSAGE:ChatMessage}.get(report.target_type)
+        obj=target.objects.filter(public_id=report.target_id).first() if target else None
+        if obj and _reported_user(report.target_type,obj).pk == user.pk:
+            report.status=Report.Status.REJECTED; report.save(update_fields=["status"])
+
+def _record_auto_case(target_type,target,count,threshold,before,after):
+    case=AutoModerationCase.objects.filter(target_type=target_type,target_id=target.public_id,review_status__in=[AutoModerationCase.Review.PENDING,AutoModerationCase.Review.REVIEWING]).order_by("-created_at").first()
+    created=case is None
+    if created: case=AutoModerationCase.objects.create(target_type=target_type,target_id=target.public_id,report_count=count,threshold=threshold,before_status=before,after_status=after)
+    if created: AuditLog.objects.create(actor=None,action="moderation.auto_restrict" if target_type == AutoModerationCase.Target.USER else "moderation.auto_hide",target=str(target.public_id),reason=f"reports={count}/{threshold}; {before}->{after}")
+    return case
+
+@transaction.atomic
 def create_report(*,reporter,target_type,target_id,reason,description=""):
-    targets={Report.Target.USER:User,Report.Target.PRODUCT:Product,Report.Target.MESSAGE:ChatMessage}; target=targets[target_type].objects.filter(public_id=target_id).first()
+    targets={Report.Target.USER:User,Report.Target.PRODUCT:Product,Report.Target.MESSAGE:ChatMessage}
+    if target_type not in targets: raise ValidationError("Unsupported report target.")
+    # Locking the reported object serializes threshold evaluation and state change.
+    target=targets[target_type].objects.select_for_update().filter(public_id=target_id).first()
     if not target: raise ValidationError("신고 대상을 찾을 수 없습니다.")
     if target_type == Report.Target.USER and target.pk == reporter.pk: raise ValidationError("자기 자신은 신고할 수 없습니다.")
     if target_type == Report.Target.PRODUCT and target.seller_id == reporter.pk: raise ValidationError("자신의 상품은 신고할 수 없습니다.")
     if target_type == Report.Target.MESSAGE and target.sender_id == reporter.pk: raise ValidationError("자신의 메시지는 신고할 수 없습니다.")
+    if reporter.status != User.Status.ACTIVE or not reporter.is_active: raise ValidationError("Restricted accounts cannot submit reports.")
     _rate_limit(reporter,"report",10)
     report=Report.objects.create(reporter=reporter,target_type=target_type,target_id=target_id,reason=reason,description=description.strip())
-    count=Report.objects.filter(target_type=target_type,target_id=target_id,status__in=[Report.Status.PENDING,Report.Status.REVIEWING]).values("reporter").distinct().count()
-    if target_type == Report.Target.PRODUCT and count >= 3:
-        target.status=Product.Status.HIDDEN; target.save(update_fields=["status","updated_at"]); AuditLog.objects.create(actor=None,action="report.auto_hide",target=str(target.public_id))
-    if target_type == Report.Target.USER and count >= 3 and target.status == User.Status.ACTIVE:
-        target.status=User.Status.RESTRICTED; target.save(update_fields=["status"]); AuditLog.objects.create(actor=None,action="report.auto_restrict",target=str(target.public_id))
+    count=_valid_reporter_count(target_type,target_id)
+    if settings.AUTO_MODERATION_ENABLED and target_type == Report.Target.PRODUCT and count >= settings.AUTO_HIDE_PRODUCT_REPORT_THRESHOLD and target.status in {Product.Status.ACTIVE,Product.Status.RESERVED}:
+        before=target.status; target.status=Product.Status.HIDDEN; target.save(update_fields=["status","updated_at"]); _record_auto_case(AutoModerationCase.Target.PRODUCT,target,count,settings.AUTO_HIDE_PRODUCT_REPORT_THRESHOLD,before,Product.Status.HIDDEN)
+    reported_user=User.objects.select_for_update().get(pk=_reported_user(target_type,target).pk)
+    user_count=len(_user_reporter_ids(reported_user))
+    if settings.AUTO_MODERATION_ENABLED and user_count >= settings.AUTO_RESTRICT_USER_REPORT_THRESHOLD and reported_user.status == User.Status.ACTIVE:
+        before=reported_user.status; reported_user.status=User.Status.RESTRICTED; reported_user.save(update_fields=["status"]); _record_auto_case(AutoModerationCase.Target.USER,reported_user,user_count,settings.AUTO_RESTRICT_USER_REPORT_THRESHOLD,before,User.Status.RESTRICTED)
     return report
 
 @transaction.atomic
 def transition_report(*, actor, report, status, reason):
     allowed={Report.Status.PENDING:{Report.Status.REVIEWING,Report.Status.REJECTED},Report.Status.REVIEWING:{Report.Status.ACCEPTED,Report.Status.REJECTED,Report.Status.RESOLVED},Report.Status.ACCEPTED:{Report.Status.RESOLVED}}
-    if actor.role not in {User.Role.MODERATOR,User.Role.ADMIN,User.Role.SUPERADMIN} or not reason.strip() or status not in allowed.get(report.status,set()): raise ValidationError("허용되지 않은 신고 상태 전이입니다.")
-    before=report.status; report.status=status; report.save(update_fields=["status"]); AuditLog.objects.create(actor=actor,action="report.transition",target=str(report.public_id),reason=f"{before}->{status}: {reason.strip()}"); return report
+    if actor.role not in {User.Role.MODERATOR,User.Role.ADMIN,User.Role.SUPERADMIN} or status not in allowed.get(report.status,set()): raise ValidationError("허용되지 않은 신고 상태 전이입니다.")
+    if status in {Report.Status.ACCEPTED, Report.Status.REJECTED} and not reason.strip(): raise ValidationError("승인 또는 기각에는 처리 사유가 필요합니다.")
+    before=report.status; report.status=status; report.save(update_fields=["status"])
+    AuditLog.objects.create(actor=actor,action="report.transition",target=str(report.public_id),reason=f"{before}->{status}: {reason.strip()}")
+    # A moderator's accepted product report is an explicit temporary content
+    # action. Rejection deliberately leaves the listing state untouched.
+    if status == Report.Status.ACCEPTED and report.target_type == Report.Target.PRODUCT:
+        product=Product.objects.filter(public_id=report.target_id).first()
+        if product and product.status not in {Product.Status.HIDDEN, Product.Status.DELETED}:
+            before_product=product.status
+            product.status=Product.Status.HIDDEN; product.save(update_fields=["status","updated_at"])
+            AuditLog.objects.create(actor=actor,action="report.accept_hide_product",target=str(product.public_id),reason=f"{before_product}->HIDDEN: {reason.strip()}")
+    if status == Report.Status.ACCEPTED and report.target_type == Report.Target.MESSAGE:
+        message=ChatMessage.objects.filter(public_id=report.target_id,status=ChatMessage.Status.VISIBLE).first()
+        if message:
+            message.status=ChatMessage.Status.HIDDEN; message.save(update_fields=["status"])
+            AuditLog.objects.create(actor=actor,action="chat.message_hide",target=str(message.public_id),reason=f"report accepted: {reason.strip()}")
+    return report
 
 
 def _require_role(actor, roles):
     if actor.role not in roles:
         raise ValidationError("Administrator permission is required.")
+
+@transaction.atomic
+def review_auto_case(*, actor, case, accepted, reason):
+    _require_role(actor,{User.Role.MODERATOR,User.Role.ADMIN,User.Role.SUPERADMIN})
+    case=AutoModerationCase.objects.select_for_update().get(pk=case.pk)
+    if case.review_status not in {AutoModerationCase.Review.PENDING, AutoModerationCase.Review.REVIEWING} or not reason.strip(): raise ValidationError("Automatic action is already reviewed or missing a reason.")
+    model=Product if case.target_type == AutoModerationCase.Target.PRODUCT else User
+    target=model.objects.select_for_update().filter(public_id=case.target_id).first()
+    if not target: raise ValidationError("Moderation target is unavailable.")
+    if not accepted and target.status == case.after_status:
+        target.status=case.before_status; target.save(update_fields=["status"] + (["updated_at"] if isinstance(target,Product) else []))
+    if not accepted: _consume_case_reports(case)
+    case.review_status=AutoModerationCase.Review.ACCEPTED if accepted else AutoModerationCase.Review.REJECTED; case.reviewed_by=actor; case.review_reason=reason.strip(); case.reviewed_at=timezone.now(); case.save(update_fields=["review_status","reviewed_by","review_reason","reviewed_at"])
+    AuditLog.objects.create(actor=actor,action="moderation.auto_case_accept" if accepted else "moderation.auto_case_reject",target=str(case.public_id),reason=reason.strip())
+    return case
+
+@transaction.atomic
+def assign_auto_case(*, actor, case, assignee, expected_version):
+    _require_role(actor,{User.Role.MODERATOR,User.Role.ADMIN,User.Role.SUPERADMIN})
+    case=AutoModerationCase.objects.select_for_update().get(pk=case.pk)
+    if case.review_status != AutoModerationCase.Review.PENDING or case.assignment_version != expected_version: raise ValidationError("Automatic case assignment conflict.")
+    if assignee.role not in {User.Role.MODERATOR,User.Role.ADMIN,User.Role.SUPERADMIN} or assignee.status != User.Status.ACTIVE: raise ValidationError("Assignee must be an active operator.")
+    case.assigned_to=assignee; case.assignment_version+=1; case.save(update_fields=["assigned_to","assignment_version"])
+    AuditLog.objects.create(actor=actor,action="moderation.auto_case_assign",target=str(case.public_id),reason=f"assignee={assignee.username}")
+    return case
+
+@transaction.atomic
+def start_auto_case_review(*, actor, case):
+    _require_role(actor,{User.Role.MODERATOR,User.Role.ADMIN,User.Role.SUPERADMIN})
+    case=AutoModerationCase.objects.select_for_update().get(pk=case.pk)
+    if case.review_status != AutoModerationCase.Review.PENDING: raise ValidationError("Automatic case is already being reviewed or processed.")
+    if not case.assigned_to:
+        case.assigned_to=actor
+        case.assignment_version+=1
+    if not case.started_at: case.started_at=timezone.now()
+    case.review_status=AutoModerationCase.Review.REVIEWING
+    case.save(update_fields=["assigned_to","assignment_version","started_at","review_status"])
+    AuditLog.objects.create(actor=actor,action="moderation.auto_case_review_start",target=str(case.public_id),reason="")
+    return case
 
 
 @transaction.atomic

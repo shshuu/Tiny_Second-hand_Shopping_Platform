@@ -31,7 +31,7 @@ Local execution is:
 Browser → Django + Daphne → PostgreSQL 16 / Redis 7
 ```
 
-Docker Compose services are `web`, `db`, and `redis`. The development Compose file publishes `web` on port 8000 for local use; PostgreSQL and Redis have no external host-port publication in that file.
+Docker Compose services are `web`, `db`, and `redis`. The development Compose file publishes `web` as `${WEB_PORT:-8000}:8000` for local use; PostgreSQL and Redis have no external host-port publication in that file. Persistent local uploads use the `media_data` named volume rather than a host bind mount, so the non-root `appuser` owns `/app/media` after entrypoint initialization.
 
 Local Compose does not include Nginx or a real TLS certificate. Production requires an external TLS proxy or Nginx in front of Django. The Django, PostgreSQL, and Redis internal ports must not be directly exposed publicly. That proxy must remove client-supplied `X-Forwarded-Proto` and set its own trusted HTTPS value.
 
@@ -39,7 +39,7 @@ Local Compose does not include Nginx or a real TLS certificate. Production requi
 
 The final implementation uses Daphne with Django ASGI. `ProtocolTypeRouter`, `AuthMiddlewareStack`, and `URLRouter` route HTTP and WebSocket traffic. Django Channels uses a Redis Channel Layer.
 
-Chat WebSocket connections use `/ws/chat/<chat-room-public-id>/`. The Consumer persists messages through the same service-layer message policy used by HTTP paths, rather than trusting client-provided sender identity. Authentication, room membership, user state, blocking, size, empty-content, and rate-limit checks therefore apply across both transports.
+Public chat is product-based 1:1 only: a buyer starts/reuses a room from ACTIVE product detail, and both participants find it under `/chats/`. The page automatically opens `/ws/chat/<chat-room-public-id>/`; users never need to provide an ID or raw WebSocket URL. The Consumer persists messages through the same service-layer message policy used by HTTP paths, rather than trusting client-provided sender identity. Authentication, room membership, user state, blocking, size, empty-content, and rate-limit checks therefore apply across both transports. Existing historic GLOBAL rows are preserved but do not have a public UI or Consumer path.
 
 ## 5. Administration structure
 
@@ -84,9 +84,9 @@ Distinct valid reporter accumulation can apply temporary `HIDDEN` to a product o
 
 ## 11. Tests and migrations
 
-The initial final PostgreSQL/Redis result was 73/73. Independent verification then identified two High public-authentication rate-limit gaps. The corrective follow-up added four tests and the final result is **77/77 passed**, with no failures, errors, skips, or exclusions. Migrations remain `0001_initial` through `0005_report_assignment`.
+The initial final PostgreSQL/Redis result was 73/73. Independent verification then identified two High public-authentication rate-limit gaps; the corrective follow-up recorded 77/77. A later fresh-clone usability review identified deployment and user-flow gaps. The current local Docker PostgreSQL/Redis verification result is **105/105 passed with `WELCOME_BONUS_ENABLED=true` and 105/105 passed with it false**; this is Codex's Docker verification, not a VMware Ubuntu browser run. Migrations run from `0001_initial` through `0006_purchase_and_chat_read_state`.
 
-After the submission-document cleanup, functional source code, Compose, settings, migrations, and tests were not changed; the full suite was therefore not rerun solely for documentation changes.
+The current follow-up moves browser WebSocket code to external same-origin static files so CSP remains `script-src 'self'`, adds persisted per-user unread markers for never-opened rooms, and documents local demo settings. These are implementation changes, not a claim that Codex performed the user's VMware browser acceptance.
 
 ## 12. Recommended tools versus completed verification
 

@@ -41,7 +41,7 @@ Text equivalent: the browser reaches Django/Daphne through a TLS proxy in produc
 |---|---|---|
 | Identity | `User`, `Profile`, `Block` | Public UUIDs; server-side role/state/object checks |
 | Marketplace | `Category`, `Product`, `ProductImage` | Ownership, soft deletion, controlled status transitions |
-| Chat | `ChatRoom`, `ChatParticipant`, `ChatMessage` | GLOBAL/DIRECT membership and append-style messages |
+| Chat | `ChatRoom`, `ChatParticipant`, `ChatMessage` | Product-based DIRECT membership and append-style messages; historic GLOBAL data has no public flow |
 | Reports | `Report` | Target UUID validation, duplicate constraint, assignment version |
 | Wallet | `Wallet`, `WalletTransaction`, `LedgerEntry` | Balance is ledger-derived; append-only financial records |
 | Operations | `AuditLog`, `SecurityEvent`, `Notification` | Important actions/events retained without secrets |
@@ -112,7 +112,7 @@ See [`.env.example`](../.env.example) for the complete development template. Set
 
 ## Tests and intentional fail-closed log
 
-Final PostgreSQL/Redis result after independent-verification follow-up: **77/77 passed**, including the four public signup/login limiter tests. The previously verified 73 tests had no regression. No failures, errors, skipped, or excluded tests remained. Test database connections were 0 and test Redis keys were cleaned after completion.
+The earlier independent-verification follow-up recorded 77/77. A subsequent fresh-clone usability correction added product-flow, category, media-isolation, error-page, and local-operations tests. Codex's local Docker PostgreSQL/Redis result is now **88/88 passed**. See [fresh-clone usability follow-up](followup-fresh-clone-usability-verification.md) for the evidence boundary and current result.
 
 Redis fail-closed tests intentionally inject backend errors and can emit an application error/stack log. This proves requests are rejected safely. The actual HTTP response remains generalized and does not expose internal exceptions, passwords, session identifiers, or Redis keys.
 

@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from io import BytesIO
 from django.core.files.uploadedfile import SimpleUploadedFile
 from PIL import Image, ImageOps
-from .models import Product, User
+from .models import Category, Product, User
 
 class SignUpForm(UserCreationForm):
     class Meta:
@@ -17,7 +17,13 @@ class SignUpForm(UserCreationForm):
         return value
 
 class ProductForm(forms.ModelForm):
+    start_selling=forms.BooleanField(required=False, initial=True, label="등록 즉시 판매 시작")
     class Meta: model=Product; fields=("category","title","description","price","condition")
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["category"].queryset = Category.objects.filter(is_active=True).order_by("name")
+        if self.instance and self.instance.pk:
+            self.fields.pop("start_selling")
 
 class MultipleFileInput(forms.ClearableFileInput):
     allow_multiple_selected=True
@@ -30,7 +36,7 @@ class MultipleFileField(forms.FileField):
         return [super(MultipleFileField, self).clean(file, initial) for file in files]
 
 class ProductImageForm(forms.Form):
-    images=MultipleFileField(widget=MultipleFileInput(attrs={"multiple":True}), required=False)
+    images=MultipleFileField(widget=MultipleFileInput(attrs={"multiple":True, "data-image-input":"true"}), required=False)
     def clean_images(self):
         files=self.files.getlist("images")
         if len(files) > 5: raise ValidationError("한 상품에는 최대 5장만 업로드할 수 있습니다.")

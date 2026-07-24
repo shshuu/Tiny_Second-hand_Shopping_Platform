@@ -1,0 +1,5 @@
+{% extends 'market/base.html' %}
+{% block content %}<h1>내 스토어</h1><p><a class="button" href="{% url 'product_create' %}">상품 등록</a></p>
+{% for product in products %}<article class="card product-card">{% with image=product.images.all|first %}{% if image %}<img class="thumb" src="{{ image.image.url }}" alt="{{ product.title }}">{% else %}<div class="placeholder">이미지 없음</div>{% endif %}{% endwith %}<div><a href="{% url 'product_detail' product.public_id %}"><h2>{{ product.title }}</h2></a><p>{{ product.price }} P · {{ product.status }} · {{ product.created_at }}</p>{% if product.status == 'HIDDEN' %}<p class="notice">이 상품은 관리자 조치로 일반 목록에서 숨김 처리되었습니다.</p>{% endif %}{% if product.status != 'DELETED' %}<a class="button secondary" href="{% url 'product_detail' product.public_id %}">상품 관리</a>{% endif %}</div></article>{% empty %}<p>등록한 상품이 없습니다.</p>{% endfor %}
+{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">이전</a>{% endif %}<span>{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>{% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">다음</a>{% endif %}
+{% endblock %}
