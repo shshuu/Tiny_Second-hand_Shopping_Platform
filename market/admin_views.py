@@ -71,7 +71,9 @@ def _decorate_reports(reports):
             message=chat_messages.get(str(report.target_id))
             if message:
                 product=message.room.related_product
-                report.target_label=f"{product.title if product else '상품 없음'} / {message.sender.username}: {message.content[:80]}"
+                kind="1:1 채팅" if message.room.room_type == ChatRoom.Type.DIRECT else "공용 채팅"
+                product_hint=f" / {product.title}" if product else ""
+                report.target_label=f"{kind}{product_hint} / {message.sender.username}: {message.content}"
         latest=AuditLog.objects.filter(target=str(report.public_id),action="report.transition").select_related("actor").order_by("-created_at").first()
         report.processed_by=latest.actor.username if latest and latest.actor else ""
         report.processed_at=latest.created_at if latest else None
@@ -81,13 +83,20 @@ def _decorate_reports(reports):
 
 def _decorate_audit_logs(logs):
     """Presentation-only resolver: immutable audit rows remain untouched."""
-    ids=[entry.target for entry in logs]
+    # Audit targets are immutable free-form text; do not pass arbitrary values
+    # into UUID predicates when a legacy/fallback target is not a UUID.
+    import uuid as _uuid
+    ids=[]
+    for entry in logs:
+        try: ids.append(str(_uuid.UUID(str(entry.target))))
+        except (ValueError, TypeError, AttributeError): pass
     products={str(obj.public_id):obj for obj in Product.objects.filter(public_id__in=ids)}
     users={str(obj.public_id):obj for obj in User.objects.filter(public_id__in=ids)}
     reports={str(obj.public_id):obj for obj in Report.objects.select_related("reporter").filter(public_id__in=ids)}
     cases={str(obj.public_id):obj for obj in AutoModerationCase.objects.filter(public_id__in=ids)}
     messages={str(obj.public_id):obj for obj in ChatMessage.objects.select_related("sender","room__related_product").filter(public_id__in=ids)}
-    categories={str(obj.pk):obj for obj in Category.objects.filter(pk__in=[value for value in ids if value.isdigit()])}
+    numeric_targets=[entry.target for entry in logs if str(entry.target).isdigit()]
+    categories={str(obj.pk):obj for obj in Category.objects.filter(pk__in=numeric_targets)}
     for entry in logs:
         entry.display_action=_AUDIT_LABELS.get(entry.action, entry.action.replace("_", " ").replace(".", " · "))
         entry.target_label="삭제되었거나 찾을 수 없는 대상"

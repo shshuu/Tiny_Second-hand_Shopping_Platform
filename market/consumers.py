@@ -80,7 +80,7 @@ class CommunityConsumer(AsyncWebsocketConsumer):
             message=await self.persist(json.loads(text_data).get("content",""))
         except Exception:
             await self.send(text_data=json.dumps({"error":"message_rejected"})); return
-        await self.channel_layer.group_send(self.group,{"type":"community.message","id":str(message.public_id),"content":message.content,"sender":message.sender.display_name,"created_at":message.created_at.isoformat()})
+        await self.channel_layer.group_send(self.group,{"type":"community.message","id":str(message.public_id),"content":message.content,"sender":message.sender.display_name,"sender_id":message.sender_id,"created_at":message.created_at.isoformat()})
     async def community_message(self,event): await self.send(text_data=json.dumps(event))
     @database_sync_to_async
     def allowed(self):

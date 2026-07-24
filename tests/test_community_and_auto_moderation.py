@@ -86,6 +86,30 @@ class CommunityAndAutoModerationTests(TransactionTestCase):
         self.assertTrue(AuditLog.objects.filter(action="chat.message_hide",target=str(message.public_id)).exists())
         self.assertEqual(report.target_id,message.public_id)
 
+    def test_user_threshold_uses_distinct_reporters_across_owned_content(self):
+        direct=__import__("market.services",fromlist=["direct_room"]).direct_room(sender=self.seller,recipient=self.reporters[0])
+        message=__import__("market.services",fromlist=["send_message"]).send_message(sender=self.seller,room=direct,content="seller message")
+        community=send_community_message(sender=self.seller,content="seller community")
+        targets=[(Report.Target.PRODUCT,self.product.public_id),(Report.Target.PRODUCT,self.product.public_id),(Report.Target.MESSAGE,message.public_id),(Report.Target.MESSAGE,community.public_id),(Report.Target.USER,self.seller.public_id)]
+        for reporter,(kind,target) in zip(self.reporters[:4],targets[:4]): create_report(reporter=reporter,target_type=kind,target_id=target,reason="ABUSE")
+        self.seller.refresh_from_db(); self.assertEqual(self.seller.status,User.Status.ACTIVE)
+        create_report(reporter=self.reporters[4],target_type=targets[4][0],target_id=targets[4][1],reason="ABUSE")
+        self.seller.refresh_from_db(); self.assertEqual(self.seller.status,User.Status.RESTRICTED)
+        self.assertEqual(AutoModerationCase.objects.filter(target_type=AutoModerationCase.Target.USER).count(),1)
+
+    def test_rejected_product_case_consumes_previous_cycle_reports(self):
+        for reporter in self.reporters[:3]: create_report(reporter=reporter,target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM")
+        case=AutoModerationCase.objects.get(target_type=AutoModerationCase.Target.PRODUCT)
+        moderator=register_user(username="cycle_mod",password="very-secure-password",display_name="Mod"); moderator.role=User.Role.MODERATOR; moderator.save(update_fields=["role"])
+        review_auto_case(actor=moderator,case=case,accepted=False,reason="not enough evidence")
+        self.product.refresh_from_db(); self.assertEqual(self.product.status,Product.Status.ACTIVE)
+        self.assertEqual(Report.objects.filter(target_type=Report.Target.PRODUCT,status=Report.Status.REJECTED).count(),3)
+        extra=[register_user(username=f"cycle{i}",password="very-secure-password",display_name="C") for i in range(3)]
+        for reporter in extra[:2]: create_report(reporter=reporter,target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM")
+        self.product.refresh_from_db(); self.assertEqual(self.product.status,Product.Status.ACTIVE)
+        create_report(reporter=extra[2],target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM")
+        self.product.refresh_from_db(); self.assertEqual(self.product.status,Product.Status.HIDDEN)
+
     def test_community_websocket_rejects_anonymous_and_persists_active_message(self):
         anonymous=WebsocketCommunicator(application,"/ws/community/")
         client=Client(); client.force_login(self.reporters[0]); cookie=client.cookies[settings.SESSION_COOKIE_NAME].value

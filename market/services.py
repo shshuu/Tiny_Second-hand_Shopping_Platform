@@ -220,7 +220,42 @@ def mark_room_read(*, room, user):
     if not room.participants.filter(user=user).exists(): raise ValidationError("Chat permission is required.")
     ChatReadState.objects.update_or_create(room=room,user=user,defaults={"last_read_at":timezone.now()})
 def _valid_reporter_count(target_type,target_id):
-    return Report.objects.filter(target_type=target_type,target_id=target_id,reporter__status=User.Status.ACTIVE,reporter__is_active=True).values("reporter_id").distinct().count()
+    return Report.objects.filter(target_type=target_type,target_id=target_id,reporter__status=User.Status.ACTIVE,reporter__is_active=True).exclude(status=Report.Status.REJECTED).values("reporter_id").distinct().count()
+
+def _reported_user(target_type, target):
+    if target_type == Report.Target.USER: return target
+    if target_type == Report.Target.PRODUCT: return target.seller
+    return target.sender
+
+def _user_reporter_ids(user):
+    """Distinct valid reporters across direct, owned-product, and authored-message reports."""
+    reporters=set()
+    reports=Report.objects.select_related("reporter").exclude(status=Report.Status.REJECTED)
+    for report in reports:
+        if report.reporter.status != User.Status.ACTIVE or not report.reporter.is_active: continue
+        owner=None
+        if report.target_type == Report.Target.USER:
+            owner=User.objects.filter(public_id=report.target_id).only("pk").first()
+        elif report.target_type == Report.Target.PRODUCT:
+            owner=Product.objects.filter(public_id=report.target_id).values_list("seller_id",flat=True).first()
+        elif report.target_type == Report.Target.MESSAGE:
+            owner=ChatMessage.objects.filter(public_id=report.target_id).values_list("sender_id",flat=True).first()
+        owner_id=owner.pk if isinstance(owner,User) else owner
+        if owner_id == user.pk: reporters.add(report.reporter_id)
+    return reporters
+
+def _consume_case_reports(case):
+    """Rejected automatic cases begin a new reporting cycle."""
+    if case.target_type == AutoModerationCase.Target.PRODUCT:
+        Report.objects.filter(target_type=Report.Target.PRODUCT,target_id=case.target_id,status__in=[Report.Status.PENDING,Report.Status.REVIEWING]).update(status=Report.Status.REJECTED)
+        return
+    user=User.objects.filter(public_id=case.target_id).first()
+    if not user: return
+    for report in Report.objects.filter(status__in=[Report.Status.PENDING,Report.Status.REVIEWING]):
+        target={Report.Target.USER:User,Report.Target.PRODUCT:Product,Report.Target.MESSAGE:ChatMessage}.get(report.target_type)
+        obj=target.objects.filter(public_id=report.target_id).first() if target else None
+        if obj and _reported_user(report.target_type,obj).pk == user.pk:
+            report.status=Report.Status.REJECTED; report.save(update_fields=["status"])
 
 def _record_auto_case(target_type,target,count,threshold,before,after):
     case, created=AutoModerationCase.objects.get_or_create(target_type=target_type,target_id=target.public_id,defaults={"report_count":count,"threshold":threshold,"before_status":before,"after_status":after})
@@ -243,8 +278,10 @@ def create_report(*,reporter,target_type,target_id,reason,description=""):
     count=_valid_reporter_count(target_type,target_id)
     if settings.AUTO_MODERATION_ENABLED and target_type == Report.Target.PRODUCT and count >= settings.AUTO_HIDE_PRODUCT_REPORT_THRESHOLD and target.status in {Product.Status.ACTIVE,Product.Status.RESERVED}:
         before=target.status; target.status=Product.Status.HIDDEN; target.save(update_fields=["status","updated_at"]); _record_auto_case(AutoModerationCase.Target.PRODUCT,target,count,settings.AUTO_HIDE_PRODUCT_REPORT_THRESHOLD,before,Product.Status.HIDDEN)
-    if settings.AUTO_MODERATION_ENABLED and target_type == Report.Target.USER and count >= settings.AUTO_RESTRICT_USER_REPORT_THRESHOLD and target.status == User.Status.ACTIVE:
-        before=target.status; target.status=User.Status.RESTRICTED; target.save(update_fields=["status"]); _record_auto_case(AutoModerationCase.Target.USER,target,count,settings.AUTO_RESTRICT_USER_REPORT_THRESHOLD,before,User.Status.RESTRICTED)
+    reported_user=User.objects.select_for_update().get(pk=_reported_user(target_type,target).pk)
+    user_count=len(_user_reporter_ids(reported_user))
+    if settings.AUTO_MODERATION_ENABLED and user_count >= settings.AUTO_RESTRICT_USER_REPORT_THRESHOLD and reported_user.status == User.Status.ACTIVE:
+        before=reported_user.status; reported_user.status=User.Status.RESTRICTED; reported_user.save(update_fields=["status"]); _record_auto_case(AutoModerationCase.Target.USER,reported_user,user_count,settings.AUTO_RESTRICT_USER_REPORT_THRESHOLD,before,User.Status.RESTRICTED)
     return report
 
 @transaction.atomic
@@ -262,6 +299,11 @@ def transition_report(*, actor, report, status, reason):
             before_product=product.status
             product.status=Product.Status.HIDDEN; product.save(update_fields=["status","updated_at"])
             AuditLog.objects.create(actor=actor,action="report.accept_hide_product",target=str(product.public_id),reason=f"{before_product}->HIDDEN: {reason.strip()}")
+    if status == Report.Status.ACCEPTED and report.target_type == Report.Target.MESSAGE:
+        message=ChatMessage.objects.filter(public_id=report.target_id,status=ChatMessage.Status.VISIBLE).first()
+        if message:
+            message.status=ChatMessage.Status.HIDDEN; message.save(update_fields=["status"])
+            AuditLog.objects.create(actor=actor,action="chat.message_hide",target=str(message.public_id),reason=f"report accepted: {reason.strip()}")
     return report
 
 
@@ -279,6 +321,7 @@ def review_auto_case(*, actor, case, accepted, reason):
     if not target: raise ValidationError("Moderation target is unavailable.")
     if not accepted and target.status == case.after_status:
         target.status=case.before_status; target.save(update_fields=["status"] + (["updated_at"] if isinstance(target,Product) else []))
+    if not accepted: _consume_case_reports(case)
     case.review_status=AutoModerationCase.Review.ACCEPTED if accepted else AutoModerationCase.Review.REJECTED; case.reviewed_by=actor; case.review_reason=reason.strip(); case.reviewed_at=timezone.now(); case.save(update_fields=["review_status","reviewed_by","review_reason","reviewed_at"])
     AuditLog.objects.create(actor=actor,action="moderation.auto_case_accept" if accepted else "moderation.auto_case_reject",target=str(case.public_id),reason=reason.strip())
     return case
