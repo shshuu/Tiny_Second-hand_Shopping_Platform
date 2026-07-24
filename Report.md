@@ -6,6 +6,7 @@
 |---|---|
 | 프로젝트명 | Tiny Second-hand Shopping Platform |
 | GitHub 저장소 | [shshuu/Tiny_Second-hand_Shopping_Platform](https://github.com/shshuu/Tiny_Second-hand_Shopping_Platform) |
+| GitHub 저장소 | https://github.com/shshuu/Tiny_Second-hand_Shopping_Platform |
 | 최종 main 커밋 | `01d81b8` |
 | 최종 검증 환경 | VMware Workstation Pro 17, Ubuntu 22.04 Desktop |
 | 주요 기술 | Django 5.2, PostgreSQL 16, Redis 7, Django Channels, Daphne, Docker Compose |
