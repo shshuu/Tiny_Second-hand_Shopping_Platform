@@ -178,6 +178,7 @@ def send_community_message(*, sender, content):
 
 @transaction.atomic
 def purchase_product(*, buyer, product_id):
+    if not buyer.can_transfer(): raise ValidationError("Restricted accounts cannot purchase products.")
     product=Product.objects.select_for_update().select_related("seller").get(pk=product_id)
     if product.status != Product.Status.ACTIVE or product.seller_id == buyer.pk:
         raise ValidationError("This product is not available for purchase.")
@@ -258,7 +259,9 @@ def _consume_case_reports(case):
             report.status=Report.Status.REJECTED; report.save(update_fields=["status"])
 
 def _record_auto_case(target_type,target,count,threshold,before,after):
-    case, created=AutoModerationCase.objects.get_or_create(target_type=target_type,target_id=target.public_id,defaults={"report_count":count,"threshold":threshold,"before_status":before,"after_status":after})
+    case=AutoModerationCase.objects.filter(target_type=target_type,target_id=target.public_id,review_status__in=[AutoModerationCase.Review.PENDING,AutoModerationCase.Review.REVIEWING]).order_by("-created_at").first()
+    created=case is None
+    if created: case=AutoModerationCase.objects.create(target_type=target_type,target_id=target.public_id,report_count=count,threshold=threshold,before_status=before,after_status=after)
     if created: AuditLog.objects.create(actor=None,action="moderation.auto_restrict" if target_type == AutoModerationCase.Target.USER else "moderation.auto_hide",target=str(target.public_id),reason=f"reports={count}/{threshold}; {before}->{after}")
     return case
 

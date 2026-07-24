@@ -17,7 +17,7 @@ from django.urls import reverse
 from .models import AuditLog, AutoModerationCase, Category, ChatMessage, ChatRoom, Product, Report, SecurityEvent, User, WalletTransaction
 from .services import (assign_auto_case, assign_report, change_user_role, change_user_status, create_user_by_admin, grant,
     moderate_message, moderate_product, reverse_transfer, review_auto_case, start_auto_case_review,
-    transition_report, view_direct_chat_for_moderation)
+    transition_report, view_direct_chat_for_moderation, _reported_user)
 
 
 def _allowed(request, roles):
@@ -225,7 +225,15 @@ def auto_cases(request):
         target=products.get(str(case.target_id)) if case.target_type == AutoModerationCase.Target.PRODUCT else users.get(str(case.target_id))
         case.target_label=(target.title if case.target_type == AutoModerationCase.Target.PRODUCT else target.username) if target else "삭제되었거나 찾을 수 없는 대상"
         case.target_url=reverse("ops_product_detail",args=[target.public_id]) if target and case.target_type == AutoModerationCase.Target.PRODUCT else ""
-        case.related_reports=Report.objects.filter(target_type=Report.Target.PRODUCT if case.target_type == AutoModerationCase.Target.PRODUCT else Report.Target.USER,target_id=case.target_id).select_related("reporter").order_by("created_at")
+        if case.target_type == AutoModerationCase.Target.PRODUCT:
+            case.related_reports=Report.objects.filter(target_type=Report.Target.PRODUCT,target_id=case.target_id).exclude(status=Report.Status.REJECTED).filter(created_at__lte=case.created_at).select_related("reporter").order_by("created_at")
+        else:
+            related=[]
+            for report in Report.objects.exclude(status=Report.Status.REJECTED).select_related("reporter").filter(created_at__lte=case.created_at).order_by("created_at"):
+                target_model={Report.Target.USER:User,Report.Target.PRODUCT:Product,Report.Target.MESSAGE:ChatMessage}.get(report.target_type)
+                target_obj=target_model.objects.filter(public_id=report.target_id).first() if target_model else None
+                if target_obj and _reported_user(report.target_type,target_obj).public_id == case.target_id: related.append(report)
+            case.related_reports=related
     assignees=User.objects.filter(role__in=[User.Role.MODERATOR,User.Role.ADMIN,User.Role.SUPERADMIN],status=User.Status.ACTIVE,is_active=True).order_by("username")
     return render(request,"market/ops_auto_cases.html",{"cases":cases,"assignees":assignees})
 

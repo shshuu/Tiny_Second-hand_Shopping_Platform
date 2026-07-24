@@ -7,11 +7,12 @@
   <p>유효 신고자 {{ case.report_count }}명 / 임계치 {{ case.threshold }}명 · 상태 {{ case.before_status }} → {{ case.after_status }}</p>
   <p>자동 조치: {{ case.created_at }} · 담당자: {% if case.assigned_to %}{{ case.assigned_to.username }}{% else %}미배정{% endif %}{% if case.started_at %} · 검토 시작: {{ case.started_at }}{% endif %}</p>
   <details><summary>관련 신고 {{ case.related_reports|length }}건</summary>{% for report in case.related_reports %}<p>{{ report.reporter.username }} · {{ report.reason }}{% if report.description %} · {{ report.description }}{% endif %}</p>{% empty %}<p>관련 신고를 찾을 수 없습니다.</p>{% endfor %}</details>
-  {% if case.review_status == 'PENDING' or case.review_status == 'REVIEWING' %}
+  {% if case.review_status == 'PENDING' %}
     <form class="action-row" method="post" action="{% url 'ops_auto_case_action' case.public_id %}">{% csrf_token %}
       <input type="hidden" name="version" value="{{ case.assignment_version }}"><select name="assignee">{% for assignee in assignees %}<option value="{{ assignee.public_id }}"{% if case.assigned_to_id == assignee.id %} selected{% endif %}>{{ assignee.username }} ({{ assignee.role }})</option>{% endfor %}</select><button name="action" value="assign">담당자 배정</button>
     </form>
-    {% if case.review_status == 'PENDING' %}<form class="action-row" method="post" action="{% url 'ops_auto_case_action' case.public_id %}">{% csrf_token %}<button name="action" value="start">검토 시작</button><span class="muted">검토 시작에는 사유가 필요하지 않습니다.</span></form>{% endif %}
+    <form class="action-row" method="post" action="{% url 'ops_auto_case_action' case.public_id %}">{% csrf_token %}<button name="action" value="start">검토 시작</button><span class="muted">검토 시작에는 사유가 필요하지 않습니다.</span></form>
+  {% elif case.review_status == 'REVIEWING' %}
     <form class="action-row" method="post" action="{% url 'ops_auto_case_action' case.public_id %}">{% csrf_token %}<input name="reason" required placeholder="승인 또는 기각 사유"><button name="action" value="ACCEPTED">승인</button><button class="danger" name="action" value="REJECTED">기각 및 안전한 복구</button></form>
   {% else %}
     <section class="readonly-result"><strong>처리 결과: {{ case.get_review_status_display }}</strong><p>처리자: {{ case.reviewed_by.username|default:'시스템' }}</p><p>처리 사유: {{ case.review_reason }}</p><p>처리 시각: {{ case.reviewed_at }}</p></section>

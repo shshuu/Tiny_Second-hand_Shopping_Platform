@@ -110,6 +110,18 @@ class CommunityAndAutoModerationTests(TransactionTestCase):
         create_report(reporter=extra[2],target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM")
         self.product.refresh_from_db(); self.assertEqual(self.product.status,Product.Status.HIDDEN)
 
+    def test_moderation_case_history_keeps_second_case_independent(self):
+        for reporter in self.reporters[:3]: create_report(reporter=reporter,target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM")
+        first=AutoModerationCase.objects.get(target_type=AutoModerationCase.Target.PRODUCT)
+        moderator=register_user(username="history_mod",password="very-secure-password",display_name="Mod"); moderator.role=User.Role.MODERATOR; moderator.save(update_fields=["role"])
+        from market.services import start_auto_case_review
+        start_auto_case_review(actor=moderator,case=first); review_auto_case(actor=moderator,case=first,accepted=False,reason="reject first")
+        for index in range(3):
+            reporter=register_user(username=f"history{index}",password="very-secure-password",display_name="H")
+            create_report(reporter=reporter,target_type=Report.Target.PRODUCT,target_id=self.product.public_id,reason="SPAM")
+        cases=list(AutoModerationCase.objects.filter(target_type=AutoModerationCase.Target.PRODUCT).order_by("created_at"))
+        self.assertEqual(len(cases),2); self.assertEqual(cases[0].review_status,AutoModerationCase.Review.REJECTED); self.assertEqual(cases[1].review_status,AutoModerationCase.Review.PENDING)
+
     def test_community_websocket_rejects_anonymous_and_persists_active_message(self):
         anonymous=WebsocketCommunicator(application,"/ws/community/")
         client=Client(); client.force_login(self.reporters[0]); cookie=client.cookies[settings.SESSION_COOKIE_NAME].value

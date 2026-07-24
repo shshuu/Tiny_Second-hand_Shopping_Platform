@@ -78,7 +78,6 @@ class AutoModerationCase(models.Model):
     reviewed_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.SET_NULL,null=True,blank=True,related_name="reviewed_auto_cases")
     review_reason=models.CharField(max_length=300,blank=True); created_at=models.DateTimeField(auto_now_add=True); reviewed_at=models.DateTimeField(null=True,blank=True)
     class Meta:
-        constraints=[models.UniqueConstraint(fields=["target_type","target_id"],name="unique_auto_moderation_target")]
         indexes=[models.Index(fields=["review_status","created_at"],name="market_auto_review_created_idx")]
 
 class Wallet(models.Model):

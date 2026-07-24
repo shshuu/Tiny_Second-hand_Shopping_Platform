@@ -123,6 +123,7 @@ def product_detail(request, public_id):
 @login_required
 def product_purchase(request, public_id):
     if request.method != "POST": return HttpResponseForbidden("Invalid request")
+    if not request.user.can_transfer(): return HttpResponseForbidden("제한된 계정입니다.")
     product=get_object_or_404(Product,public_id=public_id)
     try: purchase_product(buyer=request.user,product_id=product.pk); messages.success(request,"Purchase completed.")
     except ValidationError as exc: messages.error(request,exc.message)
@@ -131,6 +132,7 @@ def product_purchase(request, public_id):
 @login_required
 def product_edit(request, public_id):
     product=get_object_or_404(Product, public_id=public_id, seller=request.user)
+    if not request.user.can_transfer(): return HttpResponseForbidden("제한된 계정입니다.")
     if product.status == Product.Status.SOLD: return HttpResponseForbidden("판매 완료 상품은 수정할 수 없습니다.")
     form=ProductForm(request.POST or None, instance=product)
     if request.method == "POST" and form.is_valid(): form.save(); messages.success(request, "상품을 수정했습니다."); return redirect("product_detail", public_id=product.public_id)
